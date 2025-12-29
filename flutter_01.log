@@ -1,0 +1,58 @@
+Flutter crash report.
+Please report a bug at https://github.com/flutter/flutter/issues.
+
+## command
+
+flutter run -d chrome
+
+## exception
+
+DartDevelopmentServiceException: DartDevelopmentServiceException: Failed to start Dart Development Service
+
+```
+```
+
+## flutter doctor
+
+```
+[32m[✓][39m Flutter (Channel stable, 3.38.5, on macOS 14.4 23E214 darwin-arm64, locale ko-JP) [148ms]
+    [32m•[39m Flutter version 3.38.5 on channel stable at /Users/anjunhwi/flutter
+    [32m•[39m Upstream repository https://github.com/flutter/flutter.git
+    [32m•[39m Framework revision f6ff1529fd (2 weeks ago), 2025-12-11 11:50:07 -0500
+    [32m•[39m Engine revision 1527ae0ec5
+    [32m•[39m Dart version 3.10.4
+    [32m•[39m DevTools version 2.51.1
+    [32m•[39m Feature flags: enable-web, enable-linux-desktop, enable-macos-desktop, enable-windows-desktop,
+      enable-android, enable-ios, cli-animations, enable-native-assets, omit-legacy-version-file,
+      enable-lldb-debugging
+
+[33m[!][39m Android toolchain - develop for Android devices (Android SDK version 33.0.1) [2.8s]
+    [32m•[39m Android SDK at /Users/anjunhwi/Library/Android/sdk
+    [32m•[39m Emulator version 31.3.14.0 (build_id 9322596) (CL:N/A)
+    [31m✗[39m Flutter requires Android SDK 36 and the Android BuildTools 28.0.3
+      To update the Android SDK visit https://flutter.dev/to/macos-android-setup for detailed
+      instructions.
+    [33m![39m Some Android licenses not accepted. To resolve this, run: flutter doctor --android-licenses
+
+[33m[!][39m Xcode - develop for iOS and macOS (Xcode 15.4) [1,399ms]
+    [32m•[39m Xcode at /Applications/Xcode.app/Contents/Developer
+    [32m•[39m Build 15F31d
+    [31m✗[39m Unable to get list of installed Simulator runtimes.
+    [33m![39m CocoaPods 1.11.3 out of date (1.16.2 is recommended).
+        CocoaPods is a package manager for iOS or macOS platform code.
+        Without CocoaPods, plugins will not work on iOS or macOS.
+        For more info, see https://flutter.dev/to/platform-plugins
+      To update CocoaPods, see https://guides.cocoapods.org/using/getting-started.html#updating-cocoapods
+
+[32m[✓][39m Chrome - develop for the web [3ms]
+    [32m•[39m Chrome at /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+
+[32m[✓][39m Connected device (2 available) [6.8s]
+    [32m•[39m macOS (desktop) • macos  • darwin-arm64   • macOS 14.4 23E214 darwin-arm64
+    [32m•[39m Chrome (web)    • chrome • web-javascript • Google Chrome 139.0.7258.155
+
+[32m[✓][39m Network resources [335ms]
+    [32m•[39m All expected network resources are available.
+
+[33m![39m Doctor found issues in 2 categories.
+```
