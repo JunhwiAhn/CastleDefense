@@ -54,44 +54,54 @@ List<RoundConfig> _createStageRounds(int stageLevel) {
   final rounds = <RoundConfig>[];
 
   for (int i = 1; i <= 10; i++) {
-    if (i == 5) {
-      // 라운드 5: 부보스
-      rounds.add(RoundConfig(
-        roundNumber: i,
-        totalMonsters: 1,
-        monsterMaxHp: _getMiniBossHp(stageLevel),
-        spawnInterval: 1.0,
-        monsterType: MonsterType.miniBoss,
-      ));
-    } else if (i == 10) {
-      // 라운드 10: 보스
-      rounds.add(RoundConfig(
-        roundNumber: i,
-        totalMonsters: 1,
-        monsterMaxHp: _getBossHp(stageLevel),
-        spawnInterval: 1.0,
-        monsterType: MonsterType.boss,
-      ));
-    } else {
-      // 일반 라운드
-      rounds.add(RoundConfig(
-        roundNumber: i,
-        totalMonsters: _getRoundMonsterCount(stageLevel, i),
-        monsterMaxHp: _getNormalMonsterHp(stageLevel),
-        spawnInterval: _getSpawnInterval(stageLevel),
-        monsterType: MonsterType.normal,
-      ));
-    }
+    // 모든 라운드는 일반 몬스터 수 계산 적용
+    // 보스/미니보스 라운드도 일반 몬스터가 나오고, 추가로 보스가 나옴
+    rounds.add(RoundConfig(
+      roundNumber: i,
+      totalMonsters: _getRoundMonsterCount(stageLevel, i),
+      monsterMaxHp: _getNormalMonsterHp(stageLevel),
+      spawnInterval: _getSpawnInterval(stageLevel),
+      monsterType: i == 10 ? MonsterType.boss : i == 5 ? MonsterType.miniBoss : MonsterType.normal,
+    ));
   }
 
   return rounds;
 }
 
-// 스테이지별 일반 몬스터 수
+// 스테이지별 일반 몬스터 수 (모든 라운드에 적용)
 int _getRoundMonsterCount(int stageLevel, int roundNumber) {
-  final baseCount = 5 + stageLevel;
-  // 후반 라운드일수록 약간 더 많이
-  return baseCount + (roundNumber >= 6 && roundNumber <= 9 ? 2 : 0);
+  // 스테이지별 시작 몬스터 수와 라운드당 증가량
+  int baseCount;
+  int incrementPerRound;
+
+  switch (stageLevel) {
+    case 1:
+      baseCount = 6; // 라운드 1 시작
+      incrementPerRound = 4; // 라운드마다 4씩 증가
+      break;
+    case 2:
+      baseCount = 22; // 라운드 1 시작
+      incrementPerRound = 6; // 라운드마다 6씩 증가
+      break;
+    case 3:
+      baseCount = 40; // 라운드 1 시작
+      incrementPerRound = 8; // 라운드마다 8씩 증가
+      break;
+    case 4:
+      baseCount = 60; // 라운드 1 시작
+      incrementPerRound = 10; // 라운드마다 10씩 증가
+      break;
+    case 5:
+      baseCount = 85; // 라운드 1 시작
+      incrementPerRound = 12; // 라운드마다 12씩 증가
+      break;
+    default:
+      baseCount = 100;
+      incrementPerRound = 15;
+      break;
+  }
+
+  return baseCount + ((roundNumber - 1) * incrementPerRound);
 }
 
 // 스테이지별 일반 몬스터 HP
@@ -154,11 +164,26 @@ class _Monster {
   });
 }
 
+// 캐릭터 슬롯 (향후 자동공격/스킬 사용)
+class _CharacterSlot {
+  final int slotIndex; // 0~3
+  bool hasCharacter; // 캐릭터가 배치되어 있는지
+  String characterName; // 캐릭터 이름 (프로토타입용)
+  bool skillReady; // 스킬 사용 가능 여부
+
+  _CharacterSlot({
+    required this.slotIndex,
+    this.hasCharacter = false,
+    this.characterName = '',
+    this.skillReady = false,
+  });
+}
+
 class CastleDefenseGame extends FlameGame with TapCallbacks {
   // -----------------------------
   // 기본 설정
   // -----------------------------
-  final double castleHeight = 40.0;
+  final double castleHeight = 80.0; // 2배로 확대
   final int castleMaxHp = 10;
   int castleHp = 10;
 
@@ -179,10 +204,13 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
   // 현재 라운드 스폰 관련
   int totalMonstersInRound = 5; // 현재 라운드의 총 몬스터 수
   int spawnedMonsters = 0; // 현재 라운드에서 스폰된 몬스터 수
-  int defeatedMonsters = 0; // 현재 라운드에서 처치한 몬스터 수
+  int defeatedMonsters = 0; // 현재 라운드에서 플레이어가 처치한 몬스터 수
+  int escapedMonsters = 0; // 현재 라운드에서 성에 도달한 몬스터 수 (미처치)
 
   int monsterMaxHp = 2; // 현재 라운드 몬스터 최대 HP
   double spawnTimer = 0.0;
+
+  bool bossSpawned = false; // 보스/미니보스가 이미 스폰되었는지 여부
 
   // 로딩 화면용
   double _loadingTimer = 0.0;
@@ -198,8 +226,14 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
   // 결과 화면용 정보
   bool _lastStageClear = false;
 
+  // 테스트 갓 모드
+  bool _godModeEnabled = false;
+
   // 몬스터 리스트
   final List<_Monster> monsters = [];
+
+  // 캐릭터 슬롯 (4개)
+  final List<_CharacterSlot> characterSlots = [];
 
   // 랜덤
   final Random _random = Random();
@@ -212,9 +246,23 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
   @override
   Future<void> onLoad() async {
     await super.onLoad();
+    _initializeCharacterSlots(); // 캐릭터 슬롯 초기화
     _loadStage(1); // 내부 파라미터 초기화
     gameState = GameState.loading; // GameScreen 진입 즉시 로딩부터 시작
     _loadingTimer = 0.0;
+  }
+
+  // 캐릭터 슬롯 초기화 (처음에는 모두 비어있음)
+  void _initializeCharacterSlots() {
+    characterSlots.clear();
+    for (int i = 0; i < 4; i++) {
+      characterSlots.add(_CharacterSlot(
+        slotIndex: i,
+        hasCharacter: false, // 모든 슬롯이 처음엔 비어있음
+        characterName: '',
+        skillReady: false,
+      ));
+    }
   }
 
   // -----------------------------
@@ -246,7 +294,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
 
     spawnedMonsters = 0;
     defeatedMonsters = 0;
+    escapedMonsters = 0;
     spawnTimer = 0.0;
+    bossSpawned = false;
 
     monsters.clear();
   }
@@ -325,8 +375,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
       return;
     }
 
-    // 라운드 클리어 체크: 모든 몬스터를 처치했고 화면에 몬스터가 없을 때
-    if (defeatedMonsters >= totalMonstersInRound && monsters.isEmpty) {
+    // 라운드 클리어 체크: 모든 몬스터가 처리되었고 화면에 몬스터가 없을 때
+    // (처치된 몬스터 + 성에 도달한 몬스터 = 전체 몬스터)
+    if ((defeatedMonsters + escapedMonsters) >= totalMonstersInRound && monsters.isEmpty) {
       _onRoundClear();
     }
   }
@@ -361,9 +412,17 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
         final dx = castleCenterX - m.pos.x;
 
         if (dx.abs() < castleHitWidth / 2) {
+          // 보스/미니보스가 성에 도달하면 즉시 게임오버
+          if (m.type == MonsterType.boss || m.type == MonsterType.miniBoss) {
+            castleHp = 0; // 성 체력을 0으로 만들어 게임오버 트리거
+            _onGameOver();
+            return;
+          }
+
+          // 일반 몬스터는 성 HP만 감소
           castleHp = max(0, castleHp - 1);
           monsters.removeAt(i);
-          defeatedMonsters++;
+          escapedMonsters++; // 성에 도달한 몬스터 (처치 실패)
           continue;
         }
 
@@ -388,6 +447,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
         monsterRadius + _random.nextDouble() * (size.x - monsterRadius * 2);
     final y = -monsterRadius * 2;
 
+    // 일반 몬스터 스폰 (보스 라운드에서도 일반 몬스터 타입으로)
     monsters.add(
       _Monster(
         pos: Vector2(x, y),
@@ -395,10 +455,47 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
         maxHp: monsterMaxHp,
         falling: true,
         walking: false,
-        type: roundCfg.monsterType,
+        type: MonsterType.normal, // 항상 일반 몬스터로 스폰
       ),
     );
     spawnedMonsters++;
+
+    // 모든 일반 몬스터를 스폰했고, 보스 라운드이며, 아직 보스가 스폰되지 않았다면
+    if (spawnedMonsters >= totalMonstersInRound &&
+        !bossSpawned &&
+        (roundCfg.monsterType == MonsterType.boss || roundCfg.monsterType == MonsterType.miniBoss)) {
+      _spawnBoss(roundCfg.monsterType);
+    }
+  }
+
+  void _spawnBoss(MonsterType bossType) {
+    if (size.x <= 0 || size.y <= 0 || bossSpawned) return;
+
+    final x = size.x / 2; // 보스는 화면 중앙에서 스폰
+    final y = -monsterRadius * 4;
+
+    // 보스 HP 결정
+    int bossHp;
+    if (bossType == MonsterType.boss) {
+      bossHp = _getBossHp(stageLevel);
+    } else {
+      bossHp = _getMiniBossHp(stageLevel);
+    }
+
+    monsters.add(
+      _Monster(
+        pos: Vector2(x, y),
+        hp: bossHp,
+        maxHp: bossHp,
+        falling: true,
+        walking: false,
+        type: bossType,
+      ),
+    );
+
+    bossSpawned = true;
+    // 보스도 카운트에 포함 (총 몬스터 수 +1)
+    totalMonstersInRound++;
   }
 
   void _killMonsterAtIndex(int index) {
@@ -503,6 +600,13 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
     const int totalRounds = 10;
     final unlocked = unlockedRoundMax.clamp(1, totalRounds);
 
+    // God Mode 버튼 체크
+    final godModeRect = _godModeButtonRect();
+    if (godModeRect.contains(offset)) {
+      _toggleGodMode();
+      return;
+    }
+
     for (int i = 1; i <= totalRounds; i++) {
       final rect = _roundNodeRect(i);
       if (rect.contains(offset)) {
@@ -521,7 +625,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
     gameState = GameState.playing;
   }
 
-  // 플레이 중: 몬스터 공격 또는 일시정지 버튼
+  // 플레이 중: 몬스터 공격 또는 일시정지 버튼 또는 캐릭터 스킬
   void _handleTapInPlaying(Vector2 tapPos) {
     final offset = Offset(tapPos.x, tapPos.y);
 
@@ -530,6 +634,15 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
     if (pauseButtonRect.contains(offset)) {
       gameState = GameState.paused;
       return;
+    }
+
+    // 캐릭터 슬롯 체크 (스킬 사용)
+    for (int i = 0; i < characterSlots.length; i++) {
+      final slotRect = _characterSlotRect(i);
+      if (slotRect.contains(offset)) {
+        _handleCharacterSlotTap(i);
+        return;
+      }
     }
 
     // 몬스터 공격
@@ -543,6 +656,49 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
         break;
       }
     }
+  }
+
+  // 캐릭터 슬롯 클릭 처리 (스킬 사용)
+  void _handleCharacterSlotTap(int slotIndex) {
+    if (slotIndex < 0 || slotIndex >= characterSlots.length) return;
+
+    final slot = characterSlots[slotIndex];
+
+    // 캐릭터가 있고 스킬이 준비된 경우에만 스킬 사용
+    if (slot.hasCharacter && slot.skillReady) {
+      _useCharacterSkill(slotIndex);
+    }
+  }
+
+  // 캐릭터 스킬 사용 (프로토타입: 화면의 모든 몬스터에게 데미지)
+  void _useCharacterSkill(int slotIndex) {
+    final slot = characterSlots[slotIndex];
+
+    // 스킬 효과: 모든 몬스터에게 3 데미지
+    const int skillDamage = 3;
+    int damageCount = 0;
+
+    for (var i = monsters.length - 1; i >= 0; i--) {
+      final m = monsters[i];
+      m.hp = max(0, m.hp - skillDamage);
+      if (m.hp <= 0) {
+        _killMonsterAtIndex(i);
+      }
+      damageCount++;
+    }
+
+    // 스킬 사용 후 쿨다운 (프로토타입: 즉시 재사용 불가)
+    slot.skillReady = false;
+
+    // 5초 후 스킬 재사용 가능 (실제로는 타이머 필요, 지금은 간단히 표시만)
+    // TODO: 실제 쿨다운 타이머 구현
+    Future.delayed(const Duration(seconds: 5), () {
+      if (slotIndex < characterSlots.length) {
+        characterSlots[slotIndex].skillReady = true;
+      }
+    });
+
+    print('캐릭터 ${slotIndex + 1} 스킬 사용! $damageCount 마리의 몬스터에게 데미지');
   }
 
   // 일시정지 화면: "재개 / 라운드 선택 / 재시작"
@@ -609,6 +765,22 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
   }
 
   // -----------------------------
+  // 캐릭터 슬롯 Rect
+  // -----------------------------
+  Rect _characterSlotRect(int slotIndex) {
+    const double slotSize = 50.0;
+    const double slotSpacing = 10.0;
+    const double slotPadding = 10.0;
+
+    const totalWidth = (slotSize * 4) + (slotSpacing * 3);
+    final startX = (size.x - totalWidth) / 2;
+    final slotY = _castleRect.top + slotPadding;
+
+    final x = startX + (slotIndex * (slotSize + slotSpacing));
+    return Rect.fromLTWH(x, slotY, slotSize, slotSize);
+  }
+
+  // -----------------------------
   // 버튼 Rect (일시정지 화면)
   // -----------------------------
   Rect _pauseResumeButtonRect() {
@@ -666,6 +838,15 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
   // 맵 스타일 라운드 노드 위치 계산
   // -----------------------------
   static const double _nodeRadius = 26.0;
+  static const double _bossNodeRadius = 38.0; // 보스 라운드는 더 크게
+
+  // 라운드별 반지름 반환
+  double _getNodeRadius(int roundIndex) {
+    if (roundIndex == 10 || roundIndex == 5) {
+      return _bossNodeRadius; // 보스/미니보스 라운드
+    }
+    return _nodeRadius; // 일반 라운드
+  }
 
   Offset _roundNodeCenter(int roundIndex) {
     final double topMargin = size.y * 0.20;
@@ -692,7 +873,35 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
 
   Rect _roundNodeRect(int roundIndex) {
     final center = _roundNodeCenter(roundIndex);
-    return Rect.fromCircle(center: center, radius: _nodeRadius);
+    final radius = _getNodeRadius(roundIndex);
+    return Rect.fromCircle(center: center, radius: radius);
+  }
+
+  // God Mode 버튼 Rect (우측 상단)
+  Rect _godModeButtonRect() {
+    const double width = 100;
+    const double height = 40;
+    final double x = size.x - width - 10;
+    const double y = 10.0;
+    return Rect.fromLTWH(x, y, width, height);
+  }
+
+  // God Mode 토글 함수
+  void _toggleGodMode() {
+    _godModeEnabled = !_godModeEnabled;
+
+    if (_godModeEnabled) {
+      // 모든 라운드 언락
+      unlockedRoundMax = 10;
+
+      // 모든 캐릭터 슬롯 활성화 및 스킬 준비 완료
+      for (var slot in characterSlots) {
+        slot.hasCharacter = true;
+        slot.skillReady = true;
+      }
+    }
+    // God Mode를 끄면 원래 상태로 돌아가는 것은 구현하지 않음
+    // (테스트 목적이므로 한번 켜면 계속 유지)
   }
 
   // -----------------------------
@@ -765,6 +974,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
     final castlePaint = Paint()..color = const Color(0xFF424242);
     canvas.drawRect(_castleRect, castlePaint);
 
+    // 캐릭터 슬롯 렌더링 (성 위에 배치)
+    _renderCharacterSlots(canvas);
+
     const double hpBarHeight = 8.0;
     const double hpBarMargin = 4.0;
     final double hpRatio = castleMaxHp == 0 ? 0 : castleHp / castleMaxHp;
@@ -794,6 +1006,64 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
       fontSize: 14,
       color: const Color(0xFFFFFFFF),
     );
+  }
+
+  // 캐릭터 슬롯 렌더링
+  void _renderCharacterSlots(Canvas canvas) {
+    for (int i = 0; i < characterSlots.length; i++) {
+      final slot = characterSlots[i];
+      final rect = _characterSlotRect(i);
+
+      // 슬롯 배경
+      final bgPaint = Paint()
+        ..color = slot.hasCharacter
+            ? const Color(0xFF37474F) // 캐릭터 있음: 어두운 청회색
+            : const Color(0xFF212121); // 캐릭터 없음 (잠금): 매우 어두운 회색
+
+      final borderPaint = Paint()
+        ..color = slot.hasCharacter
+            ? (slot.skillReady
+                ? const Color(0xFF00E676) // 스킬 준비 완료: 초록색
+                : const Color(0xFF90A4AE)) // 스킬 쿨다운 중: 회색
+            : const Color(0xFF424242) // 캐릭터 없음: 어두운 회색
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0;
+
+      canvas.drawRect(rect, bgPaint);
+      canvas.drawRect(rect, borderPaint);
+
+      // 슬롯 내용
+      if (slot.hasCharacter) {
+        // 캐릭터 아이콘 (프로토타입: 이모지)
+        _drawCenteredText(
+          canvas,
+          '🛡️',
+          Offset(rect.center.dx, rect.center.dy - 8),
+          fontSize: 24,
+          color: const Color(0xFFFFFFFF),
+        );
+
+        // 스킬 준비 상태 표시
+        if (slot.skillReady) {
+          _drawCenteredText(
+            canvas,
+            '✨',
+            Offset(rect.center.dx, rect.bottom - 12),
+            fontSize: 12,
+            color: const Color(0xFF00E676),
+          );
+        }
+      } else {
+        // 캐릭터 없음: 자물쇠 아이콘 (잠금 상태)
+        _drawCenteredText(
+          canvas,
+          '🔒',
+          Offset(rect.center.dx, rect.center.dy),
+          fontSize: 20,
+          color: const Color(0xFF616161),
+        );
+      }
+    }
   }
 
   void _renderMonsters(Canvas canvas) {
@@ -1091,67 +1361,130 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
       final center = _roundNodeCenter(i);
       final bool isUnlocked = i <= unlocked;
       final bool isCurrent = i == unlocked;
+      final bool isBossRound = i == 10;
+      final bool isMiniBossRound = i == 5;
+      final double nodeRadius = _getNodeRadius(i);
 
-      final baseColor = isUnlocked
-          ? (isCurrent ? const Color(0xFF00C853) : const Color(0xFF26A69A))
-          : const Color(0xFFBDBDBD);
+      // 보스 라운드별 색상
+      Color baseColor;
+      if (isBossRound) {
+        // 라운드 10: 보스 라운드 (빨강-금색 계열)
+        baseColor = isUnlocked
+            ? const Color(0xFFD32F2F)
+            : const Color(0xFFBDBDBD);
+      } else if (isMiniBossRound) {
+        // 라운드 5: 미니보스 라운드 (주황색 계열)
+        baseColor = isUnlocked
+            ? const Color(0xFFFF6F00)
+            : const Color(0xFFBDBDBD);
+      } else {
+        // 일반 라운드
+        baseColor = isUnlocked
+            ? (isCurrent ? const Color(0xFF00C853) : const Color(0xFF26A69A))
+            : const Color(0xFFBDBDBD);
+      }
 
       final bgPaint = Paint()..color = baseColor;
+
+      // 보스 라운드는 테두리도 더 화려하게
+      final borderColor = isUnlocked
+          ? (isBossRound ? const Color(0xFFFFD700) // 금색
+             : isMiniBossRound ? const Color(0xFFFFAB00) // 밝은 주황
+             : const Color(0xFFFFFFFF)) // 흰색
+          : const Color(0xFF9E9E9E);
+
+      final borderWidth = isBossRound ? 4.0
+          : isMiniBossRound ? 3.5
+          : isCurrent ? 3.0
+          : 2.0;
+
       final borderPaint = Paint()
-        ..color = isUnlocked ? const Color(0xFFFFFFFF) : const Color(0xFF9E9E9E)
+        ..color = borderColor
         ..style = PaintingStyle.stroke
-        ..strokeWidth = isCurrent ? 3.0 : 2.0;
+        ..strokeWidth = borderWidth;
 
       final rrect = RRect.fromRectAndRadius(
-        Rect.fromCircle(center: center, radius: _nodeRadius),
-        const Radius.circular(30),
+        Rect.fromCircle(center: center, radius: nodeRadius),
+        const Radius.circular(50),
       );
 
       canvas.drawRRect(rrect, bgPaint);
       canvas.drawRRect(rrect, borderPaint);
 
       if (isUnlocked) {
-        // 라운드 번호
-        _drawCenteredText(
-          canvas,
-          '$i',
-          center.translate(0, -4),
-          fontSize: 18,
-          color: const Color(0xFFFFFFFF),
-        );
-
-        // 보스 라운드 표시
-        if (i == 10) {
+        // 보스 라운드는 아이콘과 라벨을 더 크게
+        if (isBossRound) {
+          // 라운드 10: 보스 라운드
           _drawCenteredText(
             canvas,
             '⚔️',
-            center.translate(0, 14),
-            fontSize: 12,
+            center.translate(0, -10),
+            fontSize: 24,
+            color: const Color(0xFFFFD700),
+          );
+          _drawCenteredText(
+            canvas,
+            'BOSS',
+            center.translate(0, 8),
+            fontSize: 14,
             color: const Color(0xFFFFFFFF),
           );
-        } else if (i == 5) {
+          _drawCenteredText(
+            canvas,
+            '$i',
+            center.translate(0, 22),
+            fontSize: 12,
+            color: const Color(0xFFFFD700),
+          );
+        } else if (isMiniBossRound) {
+          // 라운드 5: 미니보스 라운드
           _drawCenteredText(
             canvas,
             '⚡',
-            center.translate(0, 14),
-            fontSize: 12,
-            color: const Color(0xFFFFFFFF),
+            center.translate(0, -10),
+            fontSize: 22,
+            color: const Color(0xFFFFAB00),
           );
-        } else if (isCurrent) {
           _drawCenteredText(
             canvas,
-            '★',
-            center.translate(0, 14),
+            'MINI',
+            center.translate(0, 8),
             fontSize: 12,
             color: const Color(0xFFFFFFFF),
           );
+          _drawCenteredText(
+            canvas,
+            '$i',
+            center.translate(0, 20),
+            fontSize: 11,
+            color: const Color(0xFFFFAB00),
+          );
+        } else {
+          // 일반 라운드
+          _drawCenteredText(
+            canvas,
+            '$i',
+            center.translate(0, -4),
+            fontSize: 18,
+            color: const Color(0xFFFFFFFF),
+          );
+
+          if (isCurrent) {
+            _drawCenteredText(
+              canvas,
+              '★',
+              center.translate(0, 14),
+              fontSize: 12,
+              color: const Color(0xFFFFFFFF),
+            );
+          }
         }
       } else {
         _drawCenteredText(
           canvas,
           '🔒',
           center,
-          fontSize: 18,
+          fontSize: isBossRound ? 24 : isMiniBossRound ? 22 : 18,
           color: const Color(0xFF424242),
         );
       }
@@ -1163,6 +1496,39 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
       Offset(size.x / 2, size.y * 0.88),
       fontSize: 14,
       color: const Color(0xFF000000),
+    );
+
+    // God Mode 버튼
+    final godModeRect = _godModeButtonRect();
+    final godModeBgPaint = Paint()
+      ..color = _godModeEnabled
+          ? const Color(0xFFFFD700) // 활성화: 금색
+          : const Color(0xFF757575); // 비활성화: 회색
+
+    final godModeBorderPaint = Paint()
+      ..color = _godModeEnabled
+          ? const Color(0xFFFF6F00) // 활성화: 주황색 테두리
+          : const Color(0xFF424242) // 비활성화: 어두운 회색
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(godModeRect, const Radius.circular(8)),
+      godModeBgPaint,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(godModeRect, const Radius.circular(8)),
+      godModeBorderPaint,
+    );
+
+    _drawCenteredText(
+      canvas,
+      _godModeEnabled ? 'GOD ✓' : 'TEST',
+      Offset(godModeRect.center.dx, godModeRect.center.dy),
+      fontSize: 14,
+      color: _godModeEnabled
+          ? const Color(0xFF000000) // 활성화: 검은색 텍스트
+          : const Color(0xFFFFFFFF), // 비활성화: 흰색 텍스트
     );
   }
 
