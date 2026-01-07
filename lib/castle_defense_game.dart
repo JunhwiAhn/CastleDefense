@@ -17,6 +17,14 @@ enum GameState {
   result, // 결과 화면 (클리어 or 실패)
 }
 
+enum BottomMenu {
+  shop, // 상점
+  inventory, // 인벤토리
+  home, // 홈 (라운드 선택)
+  gacha, // 뽑기
+  settings, // 설정
+}
+
 enum MonsterType {
   normal, // 일반 몬스터
   miniBoss, // 부보스 (라운드 5)
@@ -144,6 +152,9 @@ final Map<int, StageConfig> kStageConfigs = {
   3: StageConfig(stageLevel: 3, rounds: _createStageRounds(3)),
   4: StageConfig(stageLevel: 4, rounds: _createStageRounds(4)),
   5: StageConfig(stageLevel: 5, rounds: _createStageRounds(5)),
+  6: StageConfig(stageLevel: 6, rounds: _createStageRounds(6)),
+  7: StageConfig(stageLevel: 7, rounds: _createStageRounds(7)),
+  8: StageConfig(stageLevel: 8, rounds: _createStageRounds(8)),
 };
 
 class _Monster {
@@ -212,6 +223,10 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
 
   bool bossSpawned = false; // 보스/미니보스가 이미 스폰되었는지 여부
 
+  // 라운드 시간 제한
+  double roundTimer = 0.0; // 현재 라운드 경과 시간
+  double roundTimeLimit = 120.0; // 현재 라운드 제한 시간 (초)
+
   // 로딩 화면용
   double _loadingTimer = 0.0;
   final double _loadingDuration = 0.5; // 초 단위
@@ -223,11 +238,26 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
   // 라운드 언락 상태
   int unlockedRoundMax = 1; // 처음엔 라운드 1만 선택 가능
 
+  // 스테이지 선택 화면용
+  int selectedStageInUI = 1; // 라운드 선택 화면에서 현재 보고 있는 스테이지
+
+  // 하단 메뉴
+  BottomMenu currentBottomMenu = BottomMenu.home;
+
   // 결과 화면용 정보
   bool _lastStageClear = false;
 
   // 테스트 갓 모드
   bool _godModeEnabled = false;
+
+  // 플레이어 정보 (네비게이션 바용)
+  String playerNickname = 'Player';
+  int playerLevel = 1;
+  int playerGold = 1000;
+  int playerGem = 50;
+  int playerEnergy = 50;
+  int playerMaxEnergy = 50;
+  DateTime _lastEnergyUpdateTime = DateTime.now();
 
   // 몬스터 리스트
   final List<_Monster> monsters = [];
@@ -298,6 +328,16 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
     spawnTimer = 0.0;
     bossSpawned = false;
 
+    // 라운드 타입에 따라 시간 제한 설정
+    roundTimer = 0.0;
+    if (roundCfg.monsterType == MonsterType.boss) {
+      roundTimeLimit = 300.0; // 보스: 5분
+    } else if (roundCfg.monsterType == MonsterType.miniBoss) {
+      roundTimeLimit = 180.0; // 미니보스: 3분
+    } else {
+      roundTimeLimit = 120.0; // 일반: 2분
+    }
+
     monsters.clear();
   }
 
@@ -323,6 +363,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
   void update(double dt) {
     super.update(dt);
 
+    // 에너지 충전 업데이트 (모든 상태에서 지속적으로 실행)
+    _updateEnergy();
+
     switch (gameState) {
       case GameState.loading:
         _updateLoading(dt);
@@ -343,6 +386,26 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
     }
   }
 
+  // 에너지 충전 로직 (10분에 1개씩, 최대 50개)
+  void _updateEnergy() {
+    if (playerEnergy >= playerMaxEnergy) {
+      _lastEnergyUpdateTime = DateTime.now();
+      return;
+    }
+
+    final now = DateTime.now();
+    final diff = now.difference(_lastEnergyUpdateTime);
+
+    // 10분마다 1개씩 충전
+    final energyToAdd = diff.inMinutes ~/ 10;
+    if (energyToAdd > 0) {
+      playerEnergy = (playerEnergy + energyToAdd).clamp(0, playerMaxEnergy);
+      _lastEnergyUpdateTime = _lastEnergyUpdateTime.add(
+        Duration(minutes: energyToAdd * 10),
+      );
+    }
+  }
+
   void _updateLoading(double dt) {
     _loadingTimer += dt;
     if (_loadingTimer >= _loadingDuration) {
@@ -353,6 +416,15 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
 
   void _updatePlaying(double dt) {
     if (size.x <= 0 || size.y <= 0) return;
+
+    // 라운드 타이머 업데이트
+    roundTimer += dt;
+
+    // 시간 제한 체크
+    if (roundTimer >= roundTimeLimit) {
+      _onTimeOver();
+      return;
+    }
 
     _updateMonsters(dt);
 
@@ -563,6 +635,14 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
     gameState = GameState.result;
   }
 
+  void _onTimeOver() {
+    if (gameState != GameState.playing) return;
+
+    _lastStageClear = false;
+
+    gameState = GameState.result;
+  }
+
   // -----------------------------
   // 입력 처리 (탭)
   // -----------------------------
@@ -600,10 +680,37 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
     const int totalRounds = 10;
     final unlocked = unlockedRoundMax.clamp(1, totalRounds);
 
+    // 하단 메뉴 버튼 체크
+    for (int i = 0; i < 5; i++) {
+      final rect = _bottomMenuButtonRect(i);
+      if (rect.contains(offset)) {
+        _handleBottomMenuTap(i);
+        return;
+      }
+    }
+
     // God Mode 버튼 체크
     final godModeRect = _godModeButtonRect();
     if (godModeRect.contains(offset)) {
       _toggleGodMode();
+      return;
+    }
+
+    // 왼쪽 스테이지 변경 버튼 체크
+    final leftStageButtonRect = _leftStageButtonRect();
+    if (leftStageButtonRect.contains(offset)) {
+      if (selectedStageInUI > 1) {
+        selectedStageInUI--;
+      }
+      return;
+    }
+
+    // 오른쪽 스테이지 변경 버튼 체크
+    final rightStageButtonRect = _rightStageButtonRect();
+    if (rightStageButtonRect.contains(offset)) {
+      if (selectedStageInUI < 8) {
+        selectedStageInUI++;
+      }
       return;
     }
 
@@ -618,9 +725,30 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
     }
   }
 
+  // 하단 메뉴 탭 처리
+  void _handleBottomMenuTap(int index) {
+    switch (index) {
+      case 0: // 상점
+        currentBottomMenu = BottomMenu.shop;
+        break;
+      case 1: // 인벤토리
+        currentBottomMenu = BottomMenu.inventory;
+        break;
+      case 2: // 홈
+        currentBottomMenu = BottomMenu.home;
+        break;
+      case 3: // 뽑기
+        currentBottomMenu = BottomMenu.gacha;
+        break;
+      case 4: // 설정
+        currentBottomMenu = BottomMenu.settings;
+        break;
+    }
+  }
+
   // 특정 라운드부터 시작
   void _startRound(int roundNumber) {
-    _loadStage(1); // 스테이지는 항상 1
+    _loadStage(selectedStageInUI); // 선택된 스테이지 로드
     _loadRound(roundNumber);
     gameState = GameState.playing;
   }
@@ -758,10 +886,16 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
   // 버튼 Rect (일시정지 버튼)
   // -----------------------------
   Rect _pauseButtonRect() {
-    const double size = 50.0;
-    final double x = this.size.x - size - 10;
-    const double y = 10.0;
-    return Rect.fromLTWH(x, y, size, size);
+    const double buttonSize = 35.0; // 작은 버튼
+    const double marginTop = 15.0;
+    const double marginSide = 20.0;
+
+    // 스테이지-라운드 표시 오른쪽에 배치
+    // 스테이지-라운드는 (size.x - marginSide - 30)에 위치하므로 그 오른쪽에 배치
+    final double x = this.size.x - marginSide - 10;
+    final double y = marginTop - (buttonSize / 2); // 중앙 정렬
+
+    return Rect.fromLTWH(x, y, buttonSize, buttonSize);
   }
 
   // -----------------------------
@@ -835,54 +969,70 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
   }
 
   // -----------------------------
-  // 맵 스타일 라운드 노드 위치 계산
+  // 캔디크러쉬 사가 스타일: 사각형 타일 배치 (2열)
   // -----------------------------
-  static const double _nodeRadius = 26.0;
-  static const double _bossNodeRadius = 38.0; // 보스 라운드는 더 크게
-
-  // 라운드별 반지름 반환
-  double _getNodeRadius(int roundIndex) {
-    if (roundIndex == 10 || roundIndex == 5) {
-      return _bossNodeRadius; // 보스/미니보스 라운드
-    }
-    return _nodeRadius; // 일반 라운드
-  }
-
   Offset _roundNodeCenter(int roundIndex) {
-    final double topMargin = size.y * 0.20;
-    final double bottomMargin = size.y * 0.15;
-    final double usableHeight = size.y - topMargin - bottomMargin;
+    const double topMargin = 140.0; // 네비게이션 바(60) + 타이틀 박스(50) + 여백(30)
+    const double tileSize = 70.0; // 타일 크기
+    const double horizontalSpacing = 15.0; // 좌우 간격
+    const double verticalSpacing = 15.0; // 상하 간격
 
-    const int total = 10; // 라운드 10개
-    if (total <= 1) {
-      return Offset(size.x / 2, size.y * 0.6);
+    final double centerX = size.x / 2;
+
+    // 보스 라운드(10)는 맨 밑 중앙에 배치
+    if (roundIndex == 10) {
+      final double y = topMargin + (3 * (tileSize + verticalSpacing)) + tileSize / 2;
+      return Offset(centerX, y);
     }
 
-    final double t = (roundIndex - 1) / (total - 1);
-    final double y = topMargin + usableHeight * (1.0 - t);
+    // 1-9 라운드: 3열 배치 (3x3 그리드)
+    final int row = (roundIndex - 1) ~/ 3; // 0, 1, 2 행
+    final int col = (roundIndex - 1) % 3; // 0, 1, 2 열
 
-    final int row = roundIndex - 1;
-    final bool leftSide = row.isOdd;
-    final double centerX = size.x * 0.5;
-    final double offsetX = size.x * 0.22;
+    // 3개 타일의 전체 너비 계산
+    final double totalWidth = (tileSize * 3) + (horizontalSpacing * 2);
+    final double startX = centerX - totalWidth / 2 + tileSize / 2;
 
-    final double x = leftSide ? (centerX - offsetX) : (centerX + offsetX);
+    final double x = startX + (col * (tileSize + horizontalSpacing));
+    final double y = topMargin + (row * (tileSize + verticalSpacing)) + tileSize / 2;
 
     return Offset(x, y);
   }
 
   Rect _roundNodeRect(int roundIndex) {
     final center = _roundNodeCenter(roundIndex);
-    final radius = _getNodeRadius(roundIndex);
-    return Rect.fromCircle(center: center, radius: radius);
+    const double tileSize = 70.0;
+    return Rect.fromCenter(center: center, width: tileSize, height: tileSize);
   }
 
-  // God Mode 버튼 Rect (우측 상단)
+  // God Mode 버튼 Rect (우측 하단, 메뉴 바로 위)
   Rect _godModeButtonRect() {
-    const double width = 100;
-    const double height = 40;
+    const double width = 70;
+    const double height = 30;
     final double x = size.x - width - 10;
-    const double y = 10.0;
+    final double y = size.y - _bottomMenuHeight - height - 10;
+    return Rect.fromLTWH(x, y, width, height);
+  }
+
+  // 왼쪽 스테이지 변경 버튼 Rect
+  Rect _leftStageButtonRect() {
+    const double width = 35.0;
+    const double height = 35.0;
+    const double x = 15.0;
+    const double navBarHeight = 60.0;
+    const double titleBoxHeight = 50.0;
+    final double y = navBarHeight + (titleBoxHeight - height) / 2; // 타이틀 박스 중앙
+    return Rect.fromLTWH(x, y, width, height);
+  }
+
+  // 오른쪽 스테이지 변경 버튼 Rect
+  Rect _rightStageButtonRect() {
+    const double width = 35.0;
+    const double height = 35.0;
+    final double x = size.x - width - 15;
+    const double navBarHeight = 60.0;
+    const double titleBoxHeight = 50.0;
+    final double y = navBarHeight + (titleBoxHeight - height) / 2; // 타이틀 박스 중앙
     return Rect.fromLTWH(x, y, width, height);
   }
 
@@ -899,9 +1049,32 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
         slot.hasCharacter = true;
         slot.skillReady = true;
       }
+
+      // 무한 리소스
+      playerGold = 999999;
+      playerGem = 999999;
+      playerEnergy = playerMaxEnergy;
     }
     // God Mode를 끄면 원래 상태로 돌아가는 것은 구현하지 않음
     // (테스트 목적이므로 한번 켜면 계속 유지)
+  }
+
+  // -----------------------------
+  // 하단 메뉴 버튼 Rect
+  // -----------------------------
+  static const double _bottomMenuHeight = 70.0;
+  static const double _bottomMenuIconSize = 30.0;
+
+  Rect _bottomMenuRect() {
+    return Rect.fromLTWH(0, size.y - _bottomMenuHeight, size.x, _bottomMenuHeight);
+  }
+
+  Rect _bottomMenuButtonRect(int index) {
+    const int totalButtons = 5;
+    final buttonWidth = size.x / totalButtons;
+    final x = index * buttonWidth;
+    final y = size.y - _bottomMenuHeight;
+    return Rect.fromLTWH(x, y, buttonWidth, _bottomMenuHeight);
   }
 
   // -----------------------------
@@ -1126,50 +1299,53 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
   }
 
   void _renderStageProgress(Canvas canvas) {
-    const double barHeight = 10.0;
-    const double marginTop = 10.0;
+    const double marginTop = 15.0;
+    const double marginSide = 20.0;
 
-    // 라운드 정보 표시
-    _drawCenteredText(
-      canvas,
-      'Round $currentRound / $totalRoundsInStage',
-      Offset(size.x / 2, marginTop),
-      fontSize: 16,
-      color: const Color(0xFFFFFFFF),
-    );
-
-    // 현재 라운드의 진행 게이지
-    final killed = defeatedMonsters;
     final total = totalMonstersInRound;
-    final ratio = (total == 0) ? 0.0 : killed / total;
+    final remaining = total - (defeatedMonsters + escapedMonsters);
 
-    final barWidth = size.x * 0.7;
-    final barX = (size.x - barWidth) / 2;
-    final barY = marginTop + 24;
-
-    final bgPaint = Paint()..color = const Color(0xFF555555);
-    final fgPaint = Paint()..color = const Color(0xFF42A5F5);
-
-    final bgRect = Rect.fromLTWH(barX, barY, barWidth, barHeight);
-    canvas.drawRect(bgRect, bgPaint);
-
-    final fgRect = Rect.fromLTWH(
-      barX,
-      barY,
-      barWidth * ratio.clamp(0.0, 1.0),
-      barHeight,
-    );
-    canvas.drawRect(fgRect, fgPaint);
+    // 왼쪽: 남은 적 카운트 (숫자만)
+    final monsterColor = remaining <= 3
+        ? const Color(0xFFFF5252) // 3마리 이하면 빨간색
+        : const Color(0xFFFFFFFF);
 
     _drawCenteredText(
       canvas,
-      '$killed / $total',
-      Offset(size.x / 2, barY + barHeight + 14),
-      fontSize: 14,
+      '👾 $remaining',
+      Offset(marginSide + 30, marginTop),
+      fontSize: 20,
+      color: monsterColor,
+    );
+
+    // 중앙: 카운트다운 타이머
+    final remainingTime = (roundTimeLimit - roundTimer).clamp(0.0, roundTimeLimit);
+    final minutes = (remainingTime ~/ 60);
+    final seconds = (remainingTime % 60).toInt();
+    final timeText = '${minutes.toString().padLeft(1, '0')}:${seconds.toString().padLeft(2, '0')}';
+
+    final timeColor = remainingTime <= 30
+        ? const Color(0xFFFF5252) // 30초 이하면 빨간색
+        : const Color(0xFFFFFFFF);
+
+    _drawCenteredText(
+      canvas,
+      timeText,
+      Offset(size.x / 2, marginTop),
+      fontSize: 24,
+      color: timeColor,
+    );
+
+    // 오른쪽: 스테이지-라운드 표시
+    _drawCenteredText(
+      canvas,
+      '$stageLevel-$currentRound',
+      Offset(size.x - marginSide - 30, marginTop),
+      fontSize: 20,
       color: const Color(0xFFFFFFFF),
     );
 
-    // 보스 라운드 알림
+    // 보스 라운드 알림 (상단 정보 아래)
     final cfg = kStageConfigs[stageLevel];
     if (cfg != null && currentRound <= cfg.rounds.length) {
       final roundCfg = cfg.rounds[currentRound - 1];
@@ -1177,7 +1353,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
         _drawCenteredText(
           canvas,
           '⚔️ BOSS ROUND ⚔️',
-          Offset(size.x / 2, barY + barHeight + 38),
+          Offset(size.x / 2, marginTop + 30),
           fontSize: 16,
           color: const Color(0xFFFF5252),
         );
@@ -1185,7 +1361,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
         _drawCenteredText(
           canvas,
           '⚡ MINI BOSS ⚡',
-          Offset(size.x / 2, barY + barHeight + 38),
+          Offset(size.x / 2, marginTop + 30),
           fontSize: 16,
           color: const Color(0xFFFF6E40),
         );
@@ -1236,24 +1412,24 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
     final borderPaint = Paint()
       ..color = const Color(0x80FFFFFF)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
+      ..strokeWidth = 1.5;
 
     final rrect = RRect.fromRectAndRadius(
       rect,
-      const Radius.circular(8),
+      const Radius.circular(6),
     );
 
     canvas.drawRRect(rrect, bgPaint);
     canvas.drawRRect(rrect, borderPaint);
 
-    // 일시정지 아이콘 (두 개의 세로 막대)
+    // 일시정지 아이콘 (두 개의 세로 막대) - 작게 조정
     final iconPaint = Paint()
       ..color = const Color(0xFFFFFFFF)
       ..style = PaintingStyle.fill;
 
-    const double barWidth = 6.0;
-    const double barHeight = 20.0;
-    const double barGap = 6.0;
+    const double barWidth = 4.0;
+    const double barHeight = 14.0;
+    const double barGap = 4.0;
 
     final centerX = rect.center.dx;
     final centerY = rect.center.dy;
@@ -1326,210 +1502,696 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
     canvas.drawRect(fgRect, fgPaint);
   }
 
-  void _renderRoundSelectOverlay(Canvas canvas) {
+  // 네비게이션 바 렌더링
+  void _renderNavigationBar(Canvas canvas) {
+    const double navBarHeight = 60.0;
+    const double padding = 10.0;
+
+    // 네비게이션 바 배경
+    final navBarBg = Paint()..color = const Color(0xFFF5F5F5);
+    final navBarRect = Rect.fromLTWH(0, 0, size.x, navBarHeight);
+    canvas.drawRect(navBarRect, navBarBg);
+
+    // 하단 경계선
+    final borderPaint = Paint()
+      ..color = const Color(0xFFE0E0E0)
+      ..strokeWidth = 1.0;
+    canvas.drawLine(
+      Offset(0, navBarHeight),
+      Offset(size.x, navBarHeight),
+      borderPaint,
+    );
+
+    // 왼쪽: 프로필 영역
+    const double profileIconSize = 40.0;
+    final profileIconRect = Rect.fromLTWH(
+      padding,
+      (navBarHeight - profileIconSize) / 2,
+      profileIconSize,
+      profileIconSize,
+    );
+
+    // 프로필 아이콘 배경 (원형)
+    final profileBgPaint = Paint()..color = const Color(0xFF42A5F5);
+    canvas.drawCircle(
+      profileIconRect.center,
+      profileIconSize / 2,
+      profileBgPaint,
+    );
+
+    // 프로필 아이콘 (이모지)
     _drawCenteredText(
       canvas,
-      '라운드 선택',
-      Offset(size.x / 2, size.y * 0.12),
+      '👤',
+      profileIconRect.center,
       fontSize: 24,
+      color: const Color(0xFFFFFFFF),
+    );
+
+    // 닉네임과 레벨을 프로필 오른쪽에 세로로 배치
+    final nameX = profileIconRect.right + 8;
+
+    // 닉네임 (위)
+    _drawText(
+      canvas,
+      playerNickname,
+      Offset(nameX, navBarHeight / 2 - 14),
+      fontSize: 13,
       color: const Color(0xFF000000),
+      alignCenter: false,
+    );
+
+    // 레벨 (아래)
+    _drawText(
+      canvas,
+      'Lv.$playerLevel',
+      Offset(nameX, navBarHeight / 2 + 2),
+      fontSize: 11,
+      color: const Color(0xFF666666),
+      alignCenter: false,
+    );
+
+    // 오른쪽: 리소스 영역 (골드, 젬, 에너지를 가로로 나열)
+    const double resourceSpacing = 70.0;
+    final resourceStartX = size.x - padding - (resourceSpacing * 3) + 10;
+
+    // 골드
+    _renderResourceHorizontal(
+      canvas,
+      Offset(resourceStartX, navBarHeight / 2),
+      '💰',
+      _formatNumber(playerGold),
+    );
+
+    // 젬
+    _renderResourceHorizontal(
+      canvas,
+      Offset(resourceStartX + resourceSpacing, navBarHeight / 2),
+      '💎',
+      _formatNumber(playerGem),
+    );
+
+    // 에너지 (배터리)
+    _renderResourceHorizontal(
+      canvas,
+      Offset(resourceStartX + resourceSpacing * 2, navBarHeight / 2),
+      '🔋',
+      '$playerEnergy',
+    );
+  }
+
+  // 숫자 포맷팅 (1000 -> 1K)
+  String _formatNumber(int number) {
+    if (number >= 1000000) {
+      return '${(number / 1000000).toStringAsFixed(1)}M';
+    } else if (number >= 1000) {
+      return '${(number / 1000).toStringAsFixed(1)}K';
+    } else {
+      return number.toString();
+    }
+  }
+
+  // 개별 리소스 렌더링 헬퍼 (가로 정렬)
+  void _renderResourceHorizontal(
+    Canvas canvas,
+    Offset position,
+    String icon,
+    String value,
+  ) {
+    // 아이콘
+    _drawCenteredText(
+      canvas,
+      icon,
+      Offset(position.dx, position.dy - 8),
+      fontSize: 16,
+      color: const Color(0xFF000000),
+    );
+
+    // 값
+    _drawCenteredText(
+      canvas,
+      value,
+      Offset(position.dx, position.dy + 8),
+      fontSize: 11,
+      color: const Color(0xFF424242),
+    );
+  }
+
+  // 스테이지별 배경 렌더링
+  void _renderStageBackground(Canvas canvas, int stage) {
+    // 네비게이션 바와 하단 메뉴를 제외한 영역에만 배경 렌더링
+    const double navBarHeight = 60.0;
+    const double titleBoxHeight = 50.0;
+    const double topMargin = navBarHeight + titleBoxHeight; // 110px
+    final double backgroundHeight = size.y - topMargin - _bottomMenuHeight;
+
+    final backgroundRect = Rect.fromLTWH(0, topMargin, size.x, backgroundHeight);
+
+    Paint bgPaint;
+    String emoji1 = '';
+    String emoji2 = '';
+
+    switch (stage) {
+      case 1: // 초원 & 산
+        bgPaint = Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              const Color(0xFF87CEEB), // 하늘색
+              const Color(0xFF90EE90), // 연한 초록
+            ],
+          ).createShader(backgroundRect);
+        emoji1 = '🏔️'; // 산
+        emoji2 = '🌳'; // 나무
+        break;
+
+      case 2: // 협곡
+        bgPaint = Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              const Color(0xFF8B7355), // 갈색
+              const Color(0xFF654321), // 어두운 갈색
+            ],
+          ).createShader(backgroundRect);
+        emoji1 = '⛰️'; // 산
+        emoji2 = '🪨'; // 바위
+        break;
+
+      case 3: // 사막
+        bgPaint = Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              const Color(0xFFFFA500), // 주황색
+              const Color(0xFFEDC9AF), // 모래색
+            ],
+          ).createShader(backgroundRect);
+        emoji1 = '🏜️'; // 사막
+        emoji2 = '🌵'; // 선인장
+        break;
+
+      case 4: // 바다
+        bgPaint = Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              const Color(0xFF1E90FF), // 파란색
+              const Color(0xFF006994), // 진한 파란색
+            ],
+          ).createShader(backgroundRect);
+        emoji1 = '🌊'; // 파도
+        emoji2 = '🐚'; // 조개
+        break;
+
+      case 5: // 화산
+        bgPaint = Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              const Color(0xFF8B0000), // 어두운 빨강
+              const Color(0xFFFF4500), // 주황빨강
+            ],
+          ).createShader(backgroundRect);
+        emoji1 = '🌋'; // 화산
+        emoji2 = '🔥'; // 불
+        break;
+
+      case 6: // 얼음 성
+        bgPaint = Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              const Color(0xFFB0E0E6), // 파우더 블루
+              const Color(0xFFE0FFFF), // 밝은 청록
+            ],
+          ).createShader(backgroundRect);
+        emoji1 = '🏰'; // 성
+        emoji2 = '❄️'; // 눈송이
+        break;
+
+      case 7: // 천국
+        bgPaint = Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              const Color(0xFFFFFFFF), // 흰색
+              const Color(0xFFFFD700), // 금색
+            ],
+          ).createShader(backgroundRect);
+        emoji1 = '☁️'; // 구름
+        emoji2 = '✨'; // 반짝임
+        break;
+
+      case 8: // 지옥
+        bgPaint = Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              const Color(0xFF2B0000), // 매우 어두운 빨강
+              const Color(0xFF8B0000), // 어두운 빨강
+            ],
+          ).createShader(backgroundRect);
+        emoji1 = '🔥'; // 불
+        emoji2 = '💀'; // 해골
+        break;
+
+      default:
+        bgPaint = Paint()..color = const Color(0xFFE0E0E0);
+        break;
+    }
+
+    // 배경 그라데이션 그리기
+    canvas.drawRect(backgroundRect, bgPaint);
+
+    // 배경 장식 이모지 그리기 (여러 개 배치)
+    if (emoji1.isNotEmpty && emoji2.isNotEmpty) {
+      final random = Random(stage); // 스테이지별로 같은 패턴
+
+      // 상단에 이모지1 배치 (타이틀 박스 아래부터)
+      for (int i = 0; i < 5; i++) {
+        final x = random.nextDouble() * size.x;
+        final y = topMargin + 50 + random.nextDouble() * 150;
+        _drawCenteredText(
+          canvas,
+          emoji1,
+          Offset(x, y),
+          fontSize: 32,
+        );
+      }
+
+      // 하단에 이모지2 배치 (하단 메뉴 위까지)
+      for (int i = 0; i < 5; i++) {
+        final x = random.nextDouble() * size.x;
+        final y = size.y - _bottomMenuHeight - 150 + random.nextDouble() * 100;
+        _drawCenteredText(
+          canvas,
+          emoji2,
+          Offset(x, y),
+          fontSize: 28,
+        );
+      }
+    }
+  }
+
+  void _renderRoundSelectOverlay(Canvas canvas) {
+    // 네비게이션 바 렌더링
+    _renderNavigationBar(canvas);
+
+    // 현재 선택된 메뉴에 따라 다른 콘텐츠 렌더링
+    switch (currentBottomMenu) {
+      case BottomMenu.home:
+        _renderHomeContent(canvas);
+        break;
+      case BottomMenu.shop:
+        _renderShopContent(canvas);
+        break;
+      case BottomMenu.inventory:
+        _renderInventoryContent(canvas);
+        break;
+      case BottomMenu.gacha:
+        _renderGachaContent(canvas);
+        break;
+      case BottomMenu.settings:
+        _renderSettingsContent(canvas);
+        break;
+    }
+
+    // 하단 메뉴 렌더링 (항상 표시)
+    _renderBottomMenu(canvas);
+  }
+
+  // 홈 콘텐츠 (라운드 선택)
+  void _renderHomeContent(Canvas canvas) {
+    // 스테이지별 배경 렌더링
+    _renderStageBackground(canvas, selectedStageInUI);
+
+    // 스테이지 타이틀 박스 (표 형식)
+    const double navBarHeight = 60.0;
+    const double titleBoxY = navBarHeight; // 네비게이션 바 바로 아래
+    const double titleBoxHeight = 50.0;
+    final titleBoxRect = Rect.fromLTWH(0, titleBoxY, size.x, titleBoxHeight);
+
+    // 타이틀 박스 배경 (그라데이션 효과)
+    final titleBoxPaint = Paint()..color = const Color(0xFF1976D2);
+    canvas.drawRect(titleBoxRect, titleBoxPaint);
+
+    // 타이틀 박스 하단 경계선
+    final borderPaint = Paint()
+      ..color = const Color(0xFF1565C0)
+      ..strokeWidth = 2.0;
+    canvas.drawLine(
+      Offset(0, titleBoxY + titleBoxHeight),
+      Offset(size.x, titleBoxY + titleBoxHeight),
+      borderPaint,
+    );
+
+    // 스테이지 정보 텍스트
+    _drawCenteredText(
+      canvas,
+      'STAGE $selectedStageInUI',
+      Offset(size.x / 2, titleBoxY + titleBoxHeight / 2 - 2),
+      fontSize: 20,
+      color: const Color(0xFFFFFFFF),
+    );
+
+    // 왼쪽 스테이지 변경 버튼 (화살표 버튼)
+    final leftButtonRect = _leftStageButtonRect();
+    final leftActive = selectedStageInUI > 1;
+
+    final leftButtonPaint = Paint()
+      ..color = leftActive
+          ? const Color(0xFFFFFFFF)
+          : const Color(0xFFBDBDBD);
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(leftButtonRect, const Radius.circular(6)),
+      leftButtonPaint,
+    );
+
+    _drawCenteredText(
+      canvas,
+      '◀',
+      leftButtonRect.center,
+      fontSize: 18,
+      color: leftActive
+          ? const Color(0xFF1976D2)
+          : const Color(0xFF757575),
+    );
+
+    // 오른쪽 스테이지 변경 버튼
+    final rightButtonRect = _rightStageButtonRect();
+    final rightActive = selectedStageInUI < 8; // 최대 스테이지 8까지
+
+    final rightButtonPaint = Paint()
+      ..color = rightActive
+          ? const Color(0xFFFFFFFF)
+          : const Color(0xFFBDBDBD);
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rightButtonRect, const Radius.circular(6)),
+      rightButtonPaint,
+    );
+
+    _drawCenteredText(
+      canvas,
+      '▶',
+      rightButtonRect.center,
+      fontSize: 18,
+      color: rightActive
+          ? const Color(0xFF1976D2)
+          : const Color(0xFF757575),
     );
 
     const int total = 10; // 라운드 10개
     final unlocked = unlockedRoundMax.clamp(1, total);
 
-    // 연결선
-    final pathPaint = Paint()
-      ..color = const Color(0xFF90CAF9)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4.0
-      ..strokeCap = StrokeCap.round;
-
-    for (int i = 1; i < total; i++) {
-      final from = _roundNodeCenter(i);
-      final to = _roundNodeCenter(i + 1);
-
-      final isLockedPath = i >= unlocked;
-      pathPaint.color =
-          isLockedPath ? const Color(0xFFCCCCCC) : const Color(0xFF90CAF9);
-
-      canvas.drawLine(from, to, pathPaint);
-    }
-
-    // 노드
+    // 캔디크러쉬 사가 스타일: 사각형 타일 렌더링
     for (int i = 1; i <= total; i++) {
-      final center = _roundNodeCenter(i);
+      final rect = _roundNodeRect(i);
       final bool isUnlocked = i <= unlocked;
       final bool isCurrent = i == unlocked;
       final bool isBossRound = i == 10;
       final bool isMiniBossRound = i == 5;
-      final double nodeRadius = _getNodeRadius(i);
 
-      // 보스 라운드별 색상
-      Color baseColor;
-      if (isBossRound) {
-        // 라운드 10: 보스 라운드 (빨강-금색 계열)
-        baseColor = isUnlocked
-            ? const Color(0xFFD32F2F)
-            : const Color(0xFFBDBDBD);
+      // 타일 배경색
+      Color bgColor;
+      if (!isUnlocked) {
+        bgColor = const Color(0xFFE0E0E0); // 잠금: 회색
+      } else if (isBossRound) {
+        bgColor = const Color(0xFFE53935); // 보스: 빨강
       } else if (isMiniBossRound) {
-        // 라운드 5: 미니보스 라운드 (주황색 계열)
-        baseColor = isUnlocked
-            ? const Color(0xFFFF6F00)
-            : const Color(0xFFBDBDBD);
+        bgColor = const Color(0xFFFB8C00); // 미니보스: 주황
+      } else if (isCurrent) {
+        bgColor = const Color(0xFF43A047); // 현재: 초록
       } else {
-        // 일반 라운드
-        baseColor = isUnlocked
-            ? (isCurrent ? const Color(0xFF00C853) : const Color(0xFF26A69A))
-            : const Color(0xFFBDBDBD);
+        bgColor = const Color(0xFF42A5F5); // 완료: 파랑
       }
 
-      final bgPaint = Paint()..color = baseColor;
-
-      // 보스 라운드는 테두리도 더 화려하게
-      final borderColor = isUnlocked
-          ? (isBossRound ? const Color(0xFFFFD700) // 금색
-             : isMiniBossRound ? const Color(0xFFFFAB00) // 밝은 주황
-             : const Color(0xFFFFFFFF)) // 흰색
-          : const Color(0xFF9E9E9E);
-
-      final borderWidth = isBossRound ? 4.0
-          : isMiniBossRound ? 3.5
-          : isCurrent ? 3.0
-          : 2.0;
-
-      final borderPaint = Paint()
-        ..color = borderColor
+      // 타일 배경
+      final bgPaint = Paint()..color = bgColor;
+      final tileBorder = Paint()
+        ..color = const Color(0xFFFFFFFF)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = borderWidth;
+        ..strokeWidth = 3.0;
 
-      final rrect = RRect.fromRectAndRadius(
-        Rect.fromCircle(center: center, radius: nodeRadius),
-        const Radius.circular(50),
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(12)),
+        bgPaint,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(12)),
+        tileBorder,
       );
 
-      canvas.drawRRect(rrect, bgPaint);
-      canvas.drawRRect(rrect, borderPaint);
-
+      // 타일 내용
       if (isUnlocked) {
-        // 보스 라운드는 아이콘과 라벨을 더 크게
         if (isBossRound) {
-          // 라운드 10: 보스 라운드
+          // 보스 라운드 (라운드 10): 작은 악마 2개 + 큰 악마 머리 1개
+          // 왼쪽 작은 악마
           _drawCenteredText(
             canvas,
-            '⚔️',
-            center.translate(0, -10),
-            fontSize: 24,
-            color: const Color(0xFFFFD700),
+            '👿',
+            Offset(rect.center.dx - 20, rect.center.dy - 8),
+            fontSize: 18,
+            color: const Color(0xFFFFFFFF),
           );
+          // 중앙 큰 악마 머리
           _drawCenteredText(
             canvas,
-            'BOSS',
-            center.translate(0, 8),
+            '😈',
+            Offset(rect.center.dx, rect.center.dy - 8),
+            fontSize: 26,
+            color: const Color(0xFFFFFFFF),
+          );
+          // 오른쪽 작은 악마
+          _drawCenteredText(
+            canvas,
+            '👿',
+            Offset(rect.center.dx + 20, rect.center.dy - 8),
+            fontSize: 18,
+            color: const Color(0xFFFFFFFF),
+          );
+          // 라운드 번호
+          _drawCenteredText(
+            canvas,
+            '$i',
+            Offset(rect.center.dx, rect.center.dy + 18),
             fontSize: 14,
             color: const Color(0xFFFFFFFF),
           );
-          _drawCenteredText(
-            canvas,
-            '$i',
-            center.translate(0, 22),
-            fontSize: 12,
-            color: const Color(0xFFFFD700),
-          );
         } else if (isMiniBossRound) {
-          // 라운드 5: 미니보스 라운드
+          // 미니보스 라운드 (라운드 5): 작은 악마 1개
           _drawCenteredText(
             canvas,
-            '⚡',
-            center.translate(0, -10),
-            fontSize: 22,
-            color: const Color(0xFFFFAB00),
-          );
-          _drawCenteredText(
-            canvas,
-            'MINI',
-            center.translate(0, 8),
-            fontSize: 12,
+            '👿',
+            Offset(rect.center.dx, rect.center.dy - 12),
+            fontSize: 28,
             color: const Color(0xFFFFFFFF),
           );
           _drawCenteredText(
             canvas,
             '$i',
-            center.translate(0, 20),
-            fontSize: 11,
-            color: const Color(0xFFFFAB00),
+            Offset(rect.center.dx, rect.center.dy + 14),
+            fontSize: 16,
+            color: const Color(0xFFFFFFFF),
           );
         } else {
           // 일반 라운드
           _drawCenteredText(
             canvas,
             '$i',
-            center.translate(0, -4),
-            fontSize: 18,
+            rect.center,
+            fontSize: 32,
             color: const Color(0xFFFFFFFF),
           );
 
+          // 현재 라운드 표시
           if (isCurrent) {
+            // 별 표시 (타일 우측 상단)
             _drawCenteredText(
               canvas,
               '★',
-              center.translate(0, 14),
-              fontSize: 12,
-              color: const Color(0xFFFFFFFF),
+              Offset(rect.right - 12, rect.top + 12),
+              fontSize: 14,
+              color: const Color(0xFFFFD700),
             );
           }
         }
       } else {
+        // 잠금 타일
         _drawCenteredText(
           canvas,
           '🔒',
-          center,
-          fontSize: isBossRound ? 24 : isMiniBossRound ? 22 : 18,
-          color: const Color(0xFF424242),
+          rect.center,
+          fontSize: 28,
+          color: const Color(0xFF9E9E9E),
         );
       }
     }
 
-    _drawCenteredText(
-      canvas,
-      '라운드를 탭해서 시작',
-      Offset(size.x / 2, size.y * 0.88),
-      fontSize: 14,
-      color: const Color(0xFF000000),
-    );
-
-    // God Mode 버튼
+    // God Mode 버튼 (우측 하단, 메뉴 위)
     final godModeRect = _godModeButtonRect();
     final godModeBgPaint = Paint()
       ..color = _godModeEnabled
           ? const Color(0xFFFFD700) // 활성화: 금색
           : const Color(0xFF757575); // 비활성화: 회색
 
-    final godModeBorderPaint = Paint()
-      ..color = _godModeEnabled
-          ? const Color(0xFFFF6F00) // 활성화: 주황색 테두리
-          : const Color(0xFF424242) // 비활성화: 어두운 회색
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
-
     canvas.drawRRect(
       RRect.fromRectAndRadius(godModeRect, const Radius.circular(8)),
       godModeBgPaint,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(godModeRect, const Radius.circular(8)),
-      godModeBorderPaint,
     );
 
     _drawCenteredText(
       canvas,
       _godModeEnabled ? 'GOD ✓' : 'TEST',
-      Offset(godModeRect.center.dx, godModeRect.center.dy),
-      fontSize: 14,
+      godModeRect.center,
+      fontSize: 12,
       color: _godModeEnabled
           ? const Color(0xFF000000) // 활성화: 검은색 텍스트
           : const Color(0xFFFFFFFF), // 비활성화: 흰색 텍스트
     );
+  }
+
+  // 상점 콘텐츠 (플레이스홀더)
+  void _renderShopContent(Canvas canvas) {
+    _drawCenteredText(
+      canvas,
+      '🏪 상점',
+      Offset(size.x / 2, size.y * 0.4),
+      fontSize: 32,
+      color: const Color(0xFF000000),
+    );
+
+    _drawCenteredText(
+      canvas,
+      '준비 중...',
+      Offset(size.x / 2, size.y * 0.5),
+      fontSize: 18,
+      color: const Color(0xFF666666),
+    );
+  }
+
+  // 인벤토리 콘텐츠 (플레이스홀더)
+  void _renderInventoryContent(Canvas canvas) {
+    _drawCenteredText(
+      canvas,
+      '🎒 인벤토리',
+      Offset(size.x / 2, size.y * 0.4),
+      fontSize: 32,
+      color: const Color(0xFF000000),
+    );
+
+    _drawCenteredText(
+      canvas,
+      '준비 중...',
+      Offset(size.x / 2, size.y * 0.5),
+      fontSize: 18,
+      color: const Color(0xFF666666),
+    );
+  }
+
+  // 뽑기 콘텐츠 (플레이스홀더)
+  void _renderGachaContent(Canvas canvas) {
+    _drawCenteredText(
+      canvas,
+      '🎰 뽑기',
+      Offset(size.x / 2, size.y * 0.4),
+      fontSize: 32,
+      color: const Color(0xFF000000),
+    );
+
+    _drawCenteredText(
+      canvas,
+      '준비 중...',
+      Offset(size.x / 2, size.y * 0.5),
+      fontSize: 18,
+      color: const Color(0xFF666666),
+    );
+  }
+
+  // 설정 콘텐츠 (플레이스홀더)
+  void _renderSettingsContent(Canvas canvas) {
+    _drawCenteredText(
+      canvas,
+      '⚙️ 설정',
+      Offset(size.x / 2, size.y * 0.4),
+      fontSize: 32,
+      color: const Color(0xFF000000),
+    );
+
+    _drawCenteredText(
+      canvas,
+      '준비 중...',
+      Offset(size.x / 2, size.y * 0.5),
+      fontSize: 18,
+      color: const Color(0xFF666666),
+    );
+  }
+
+  // 하단 메뉴 렌더링
+  void _renderBottomMenu(Canvas canvas) {
+    // 메뉴 배경
+    final menuBgPaint = Paint()..color = const Color(0xFFFFFFFF);
+    final menuRect = Rect.fromLTWH(0, size.y - _bottomMenuHeight, size.x, _bottomMenuHeight);
+    canvas.drawRect(menuRect, menuBgPaint);
+
+    // 상단 경계선
+    final borderPaint = Paint()
+      ..color = const Color(0xFFE0E0E0)
+      ..strokeWidth = 1.0;
+    canvas.drawLine(
+      Offset(0, size.y - _bottomMenuHeight),
+      Offset(size.x, size.y - _bottomMenuHeight),
+      borderPaint,
+    );
+
+    // 메뉴 아이템들
+    final menuItems = [
+      {'icon': '🏪', 'label': '상점', 'menu': BottomMenu.shop},
+      {'icon': '🎒', 'label': '인벤토리', 'menu': BottomMenu.inventory},
+      {'icon': '🏠', 'label': '홈', 'menu': BottomMenu.home},
+      {'icon': '🎰', 'label': '뽑기', 'menu': BottomMenu.gacha},
+      {'icon': '⚙️', 'label': '설정', 'menu': BottomMenu.settings},
+    ];
+
+    for (int i = 0; i < menuItems.length; i++) {
+      final item = menuItems[i];
+      final rect = _bottomMenuButtonRect(i);
+      final isSelected = currentBottomMenu == item['menu'];
+
+      // 선택된 메뉴 배경
+      if (isSelected) {
+        final selectedBgPaint = Paint()..color = const Color(0xFFE3F2FD);
+        canvas.drawRect(rect, selectedBgPaint);
+      }
+
+      // 아이콘
+      _drawCenteredText(
+        canvas,
+        item['icon'] as String,
+        Offset(rect.center.dx, rect.center.dy - 12),
+        fontSize: 24,
+        color: isSelected ? const Color(0xFF1976D2) : const Color(0xFF666666),
+      );
+
+      // 라벨
+      _drawCenteredText(
+        canvas,
+        item['label'] as String,
+        Offset(rect.center.dx, rect.center.dy + 12),
+        fontSize: 11,
+        color: isSelected ? const Color(0xFF1976D2) : const Color(0xFF666666),
+      );
+    }
   }
 
   void _renderRoundClearOverlay(Canvas canvas) {
@@ -1806,12 +2468,13 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
     Offset offset, {
     double fontSize = 14,
     bool alignCenter = false,
+    Color color = const Color(0xFFFFFFFF),
   }) {
     final tp = TextPainter(
       text: TextSpan(
         text: text,
         style: TextStyle(
-          color: const Color(0xFFFFFFFF),
+          color: color,
           fontSize: fontSize,
         ),
       ),
