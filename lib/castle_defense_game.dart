@@ -9,10 +9,10 @@ import 'package:flame/game.dart';
 import 'package:flutter/painting.dart';
 
 enum GameState {
-  title, // 타이틀 화면
-  playing, // 전투 중
-  stageClear, // 스테이지 클리어
-  gameOver, // 성 파괴(HP 0)
+  loading, // 로딩(0.5초 게이지)
+  stageSelect, // 스테이지 선택 (맵 스타일)
+  playing, // 실제 전투
+  result, // 결과 화면 (클리어 or 실패)
 }
 
 class StageConfig {
@@ -89,13 +89,24 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
   final int weaponDamage = 1; // 기본검 데미지
 
   // 스테이지 & 스폰 관련
-  GameState gameState = GameState.title;
+  GameState gameState = GameState.loading;
   int stageLevel = 1;
   int totalMonstersInStage = 10;
   int spawnedMonsters = 0;
   int defeatedMonsters = 0;
 
   double spawnTimer = 0.0;
+
+  // 로딩 화면용
+  double _loadingTimer = 0.0;
+  final double _loadingDuration = 0.5; // 초 단위
+
+  // 스테이지 언락 상태
+  int unlockedStageMax = 1; // 처음엔 스테이지 1만 선택 가능
+
+  // 결과 화면용 정보
+  bool _lastStageClear = false;
+  int _lastStageLevel = 1;
 
   // 몬스터 리스트
   final List<_Monster> monsters = [];
@@ -105,18 +116,24 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
 
   int get killedMonsters => defeatedMonsters;
 
+  int get maxStageLevel {
+    if (kStageConfigs.isEmpty) return 1;
+    return kStageConfigs.keys.reduce(max);
+  }
+
   // -----------------------------
   // 라이프사이클
   // -----------------------------
   @override
   Future<void> onLoad() async {
     await super.onLoad();
-    _loadStage(1);
-    gameState = GameState.title;
+    _loadStage(1); // 내부 파라미터 초기화
+    gameState = GameState.loading; // GameScreen 진입 즉시 로딩부터 시작
+    _loadingTimer = 0.0;
   }
 
   // -----------------------------
-  // 스테이지 로딩
+  // 스테이지 로딩 / 시작 / 전환
   // -----------------------------
   void _loadStage(int level) {
     final cfg = kStageConfigs[level] ?? kStageConfigs[1]!;
@@ -133,6 +150,16 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
     monsters.clear();
   }
 
+  void _startStage(int level) {
+    _loadStage(level);
+    gameState = GameState.playing;
+  }
+
+  void _goToStageSelect() {
+    monsters.clear();
+    gameState = GameState.stageSelect;
+  }
+
   // -----------------------------
   // 업데이트 루프
   // -----------------------------
@@ -141,31 +168,32 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
     super.update(dt);
 
     switch (gameState) {
-      case GameState.title:
-        // 타이틀 화면에서는 논리 업데이트 없음
+      case GameState.loading:
+        _updateLoading(dt);
         return;
-
+      case GameState.stageSelect:
+        return;
       case GameState.playing:
         _updatePlaying(dt);
         return;
-
-      case GameState.stageClear:
-        // 필요하면 연출 업데이트
+      case GameState.result:
         return;
+    }
+  }
 
-      case GameState.gameOver:
-        // 게임오버 상태
-        return;
+  void _updateLoading(double dt) {
+    _loadingTimer += dt;
+    if (_loadingTimer >= _loadingDuration) {
+      _loadingTimer = 0.0;
+      _goToStageSelect();
     }
   }
 
   void _updatePlaying(double dt) {
     if (size.x <= 0 || size.y <= 0) return;
 
-    // 1) 몬스터 이동/상태 업데이트
     _updateMonsters(dt);
 
-    // 2) 스폰 로직
     if (spawnedMonsters < totalMonstersInStage) {
       spawnTimer += dt;
       final cfg = kStageConfigs[stageLevel] ?? kStageConfigs[1]!;
@@ -175,14 +203,13 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
       }
     }
 
-    // 3) 스테이지 클리어 체크
-    if (defeatedMonsters >= totalMonstersInStage && monsters.isEmpty) {
-      _onStageClear();
-    }
-
-    // 4) 게임오버 체크
     if (castleHp <= 0 && gameState == GameState.playing) {
       _onGameOver();
+      return;
+    }
+
+    if (defeatedMonsters >= totalMonstersInStage && monsters.isEmpty) {
+      _onStageClear();
     }
   }
 
@@ -194,12 +221,10 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
     final castleCenterX = size.x / 2;
     const double castleHitWidth = 60.0;
 
-    // 뒤에서부터 순회하면서 제거
     for (var i = monsters.length - 1; i >= 0; i--) {
       final m = monsters[i];
 
       if (m.falling) {
-        // 낙하
         m.pos.y += monsterFallSpeed * dt;
         if (m.pos.y >= groundY) {
           m.pos.y = groundY;
@@ -209,7 +234,6 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
       } else if (m.walking) {
         final dx = castleCenterX - m.pos.x;
 
-        // 성에 도달
         if (dx.abs() < castleHitWidth / 2) {
           castleHp = max(0, castleHp - 1);
           monsters.removeAt(i);
@@ -217,8 +241,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
           continue;
         }
 
-        // 성 방향으로 걷기
-        final dir = dx == 0 ? 0.0 : dx.sign; // -1 or 1
+        final dir = dx == 0 ? 0.0 : dx.sign;
         m.pos.x += dir * monsterWalkSpeed * dt;
         m.pos.x = m.pos.x.clamp(monsterRadius, size.x - monsterRadius);
       }
@@ -257,36 +280,28 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
   }
 
   // -----------------------------
-  // 상태 전환
+  // 상태 전환 (클리어/게임오버 → 결과 화면)
   // -----------------------------
-  void _startGame() {
-    _loadStage(1);
-    gameState = GameState.playing;
-  }
-
-  void _goToNextStage() {
-    final nextLevel = stageLevel + 1;
-    if (!kStageConfigs.containsKey(nextLevel)) {
-      _loadStage(1); // 마지막 스테이지 이후에는 1스테이지로 루프
-    } else {
-      _loadStage(nextLevel);
-    }
-    gameState = GameState.playing;
-  }
-
-  void _restartFromStage1() {
-    _loadStage(1);
-    gameState = GameState.playing;
-  }
-
   void _onStageClear() {
-    if (gameState == GameState.stageClear) return;
-    gameState = GameState.stageClear;
+    if (gameState != GameState.playing) return;
+
+    _lastStageClear = true;
+    _lastStageLevel = stageLevel;
+
+    if (stageLevel >= unlockedStageMax && stageLevel < maxStageLevel) {
+      unlockedStageMax = stageLevel + 1;
+    }
+
+    gameState = GameState.result;
   }
 
   void _onGameOver() {
-    if (gameState == GameState.gameOver) return;
-    gameState = GameState.gameOver;
+    if (gameState != GameState.playing) return;
+
+    _lastStageClear = false;
+    _lastStageLevel = stageLevel;
+
+    gameState = GameState.result;
   }
 
   // -----------------------------
@@ -297,26 +312,41 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
     final pos = event.localPosition;
 
     switch (gameState) {
-      case GameState.title:
-        _startGame();
+      case GameState.loading:
+        // 로딩 상태에서는 탭 무시 (자동 진행)
         break;
-
+      case GameState.stageSelect:
+        _handleTapInStageSelect(pos);
+        break;
       case GameState.playing:
         _handleTapInPlaying(pos);
         break;
-
-      case GameState.stageClear:
-        _goToNextStage();
-        break;
-
-      case GameState.gameOver:
-        _restartFromStage1();
+      case GameState.result:
+        _handleTapInResult(pos);
         break;
     }
 
     super.onTapDown(event);
   }
 
+  // 스테이지 선택 화면: 맵 위 스테이지 노드 터치
+  void _handleTapInStageSelect(Vector2 tapPos) {
+    final offset = Offset(tapPos.x, tapPos.y);
+    final total = maxStageLevel;
+    final unlocked = unlockedStageMax.clamp(1, maxStageLevel);
+
+    for (int i = 1; i <= total; i++) {
+      final rect = _stageNodeRect(i);
+      if (rect.contains(offset)) {
+        if (i <= unlocked) {
+          _startStage(i);
+        }
+        break;
+      }
+    }
+  }
+
+  // 플레이 중: 몬스터 공격
   void _handleTapInPlaying(Vector2 tapPos) {
     for (var i = 0; i < monsters.length; i++) {
       final m = monsters[i];
@@ -325,9 +355,100 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
         if (m.hp <= 0) {
           _killMonsterAtIndex(i);
         }
-        break; // 한 마리만 처리
+        break;
       }
     }
+  }
+
+  // 결과 화면: "다시하기 / 스테이지 선택 / 다음 스테이지"
+  void _handleTapInResult(Vector2 tapPos) {
+    final offset = Offset(tapPos.x, tapPos.y);
+
+    final retryRect = _resultRetryButtonRect();
+    final stageSelectRect = _resultStageSelectButtonRect();
+    final nextRect = _resultNextStageButtonRect();
+
+    if (retryRect.contains(offset)) {
+      _startStage(_lastStageLevel);
+      return;
+    }
+
+    if (stageSelectRect.contains(offset)) {
+      _goToStageSelect();
+      return;
+    }
+
+    final nextLevel = _lastStageLevel + 1;
+    final canGoNext = _lastStageClear &&
+        nextLevel <= maxStageLevel &&
+        kStageConfigs.containsKey(nextLevel);
+
+    if (canGoNext && nextRect.contains(offset)) {
+      if (nextLevel > unlockedStageMax) {
+        unlockedStageMax = nextLevel;
+      }
+      _startStage(nextLevel);
+    }
+  }
+
+  // -----------------------------
+  // 버튼 Rect (결과 화면)
+  // -----------------------------
+  Rect _resultRetryButtonRect() {
+    const double width = 180;
+    const double height = 40;
+    final double x = (size.x - width) / 2;
+    final double y = size.y * 0.55;
+    return Rect.fromLTWH(x, y, width, height);
+  }
+
+  Rect _resultStageSelectButtonRect() {
+    const double width = 180;
+    const double height = 40;
+    final double x = (size.x - width) / 2;
+    final double y = size.y * 0.55 + 52;
+    return Rect.fromLTWH(x, y, width, height);
+  }
+
+  Rect _resultNextStageButtonRect() {
+    const double width = 180;
+    const double height = 40;
+    final double x = (size.x - width) / 2;
+    final double y = size.y * 0.55 + 52 * 2;
+    return Rect.fromLTWH(x, y, width, height);
+  }
+
+  // -----------------------------
+  // 맵 스타일 스테이지 노드 위치 계산
+  // -----------------------------
+  static const double _nodeRadius = 26.0;
+
+  Offset _stageNodeCenter(int stageIndex) {
+    final double topMargin = size.y * 0.25;
+    final double bottomMargin = size.y * 0.15;
+    final double usableHeight = size.y - topMargin - bottomMargin;
+
+    final int total = maxStageLevel;
+    if (total <= 1) {
+      return Offset(size.x / 2, size.y * 0.6);
+    }
+
+    final double t = (stageIndex - 1) / (total - 1);
+    final double y = topMargin + usableHeight * (1.0 - t);
+
+    final int row = stageIndex - 1;
+    final bool leftSide = row.isOdd;
+    final double centerX = size.x * 0.5;
+    final double offsetX = size.x * 0.22;
+
+    final double x = leftSide ? (centerX - offsetX) : (centerX + offsetX);
+
+    return Offset(x, y);
+  }
+
+  Rect _stageNodeRect(int stageIndex) {
+    final center = _stageNodeCenter(stageIndex);
+    return Rect.fromCircle(center: center, radius: _nodeRadius);
   }
 
   // -----------------------------
@@ -339,11 +460,26 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
 
     if (size.x <= 0 || size.y <= 0) return;
 
+    // 스테이지 맵: 게임 플레이 화면 없이 흰 배경 + 맵만
+    if (gameState == GameState.stageSelect) {
+      _renderStageSelectBackground(canvas);
+      _renderStageSelectOverlay(canvas);
+      return;
+    }
+
+    // 로딩 화면: 순수 검은 배경
+    if (gameState == GameState.loading) {
+      _renderLoadingScreen(canvas);
+      return;
+    }
+
+    // 나머지(플레이, 결과)는 게임 배경 + 성/몬스터 + 오버레이
     _renderBackground(canvas);
     _renderCastle(canvas);
     _renderMonsters(canvas);
     _renderStageProgress(canvas);
     _renderWeaponInfo(canvas);
+
     _renderGameStateOverlay(canvas);
   }
 
@@ -355,15 +491,31 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
     );
   }
 
+  void _renderStageSelectBackground(Canvas canvas) {
+    final paint = Paint()..color = const Color(0xFFFFFFFF);
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.x, size.y),
+      paint,
+    );
+  }
+
+  void _renderLoadingScreen(Canvas canvas) {
+    // 완전 검은 배경
+    final paint = Paint()..color = const Color(0xFF000000);
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.x, size.y),
+      paint,
+    );
+    _renderLoadingOverlay(canvas);
+  }
+
   Rect get _castleRect =>
       Rect.fromLTWH(0, size.y - castleHeight, size.x, castleHeight);
 
   void _renderCastle(Canvas canvas) {
-    // 성 바탕
     final castlePaint = Paint()..color = const Color(0xFF424242);
     canvas.drawRect(_castleRect, castlePaint);
 
-    // 성 HP 바
     const double hpBarHeight = 8.0;
     const double hpBarMargin = 4.0;
     final double hpRatio = castleMaxHp == 0 ? 0 : castleHp / castleMaxHp;
@@ -386,12 +538,12 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
     );
     canvas.drawRect(fgRect, hpFgPaint);
 
-    // 성 HP 텍스트
     _drawCenteredText(
       canvas,
       'Castle HP: $castleHp / $castleMaxHp',
       Offset(size.x / 2, hpBarY - 14),
       fontSize: 14,
+      color: const Color(0xFFFFFFFF),
     );
   }
 
@@ -404,13 +556,10 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
     for (final m in monsters) {
       final center = Offset(m.pos.x, m.pos.y);
 
-      // 몸통 (원)
       canvas.drawCircle(center, monsterRadius, monsterPaint);
 
-      // HP 비율
       final ratio = monsterMaxHp == 0 ? 0 : m.hp / monsterMaxHp;
 
-      // HP 바 위치
       final hpBarX = center.dx - hpBarWidth / 2;
       final hpBarY = center.dy - monsterRadius - hpBarHeight - hpBarMargin;
 
@@ -428,12 +577,12 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
       );
       canvas.drawRect(fgRect, fgPaint);
 
-      // HP 텍스트 (ex: 1/2)
       _drawCenteredText(
         canvas,
         '${m.hp}/${monsterMaxHp}',
         Offset(center.dx, hpBarY - 10),
         fontSize: 10,
+        color: const Color(0xFFFFFFFF),
       );
     }
   }
@@ -464,17 +613,16 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
     );
     canvas.drawRect(fgRect, fgPaint);
 
-    // 텍스트: "killed/total"
     _drawCenteredText(
       canvas,
       '$killed / $total',
       Offset(size.x / 2, barY + barHeight + 14),
       fontSize: 14,
+      color: const Color(0xFFFFFFFF),
     );
   }
 
   void _renderWeaponInfo(Canvas canvas) {
-    // 성 내부 왼쪽 아래에 작은 패널
     final padding = 8.0;
     final panelWidth = 120.0;
     final panelHeight = 40.0;
@@ -509,62 +657,238 @@ class CastleDefenseGame extends FlameGame with TapCallbacks {
     );
   }
 
+  // -----------------------------
+  // 상태별 오버레이 (지금은 결과 화면만)
+  // -----------------------------
   void _renderGameStateOverlay(Canvas canvas) {
-    String? message;
+    if (gameState == GameState.result) {
+      _renderResultOverlay(canvas);
+    }
+  }
 
-    switch (gameState) {
-      case GameState.title:
-        message = 'Castle Defense\n탭해서 게임 시작';
-        break;
-      case GameState.stageClear:
-        message = 'Stage $stageLevel Clear!\n탭해서 다음 스테이지';
-        break;
-      case GameState.gameOver:
-        message = 'Game Over\n탭해서 다시 시작';
-        break;
-      case GameState.playing:
-        break;
+  void _renderLoadingOverlay(Canvas canvas) {
+    _drawCenteredText(
+      canvas,
+      '준비 중...',
+      Offset(size.x / 2, size.y * 0.4),
+      fontSize: 20,
+      color: const Color(0xFFFFFFFF),
+    );
+
+    // 게이지 바
+    const double barHeight = 12.0;
+    final double barWidth = size.x * 0.6;
+    final double barX = (size.x - barWidth) / 2;
+    final double barY = size.y * 0.5;
+
+    final double progress = (_loadingTimer / _loadingDuration).clamp(0.0, 1.0);
+
+    final bgPaint = Paint()..color = const Color(0xFF424242);
+    final fgPaint = Paint()..color = const Color(0xFF42A5F5);
+
+    final bgRect = Rect.fromLTWH(barX, barY, barWidth, barHeight);
+    canvas.drawRect(bgRect, bgPaint);
+
+    final fgRect = Rect.fromLTWH(
+      barX,
+      barY,
+      barWidth * progress,
+      barHeight,
+    );
+    canvas.drawRect(fgRect, fgPaint);
+  }
+
+  void _renderStageSelectOverlay(Canvas canvas) {
+    _drawCenteredText(
+      canvas,
+      '스테이지 맵',
+      Offset(size.x / 2, size.y * 0.12),
+      fontSize: 24,
+      color: const Color(0xFF000000),
+    );
+
+    final total = maxStageLevel;
+    final unlocked = unlockedStageMax.clamp(1, maxStageLevel);
+
+    // 연결선
+    final pathPaint = Paint()
+      ..color = const Color(0xFF90CAF9)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4.0
+      ..strokeCap = StrokeCap.round;
+
+    for (int i = 1; i < total; i++) {
+      final from = _stageNodeCenter(i);
+      final to = _stageNodeCenter(i + 1);
+
+      final isLockedPath = i >= unlocked;
+      pathPaint.color =
+          isLockedPath ? const Color(0xFFCCCCCC) : const Color(0xFF90CAF9);
+
+      canvas.drawLine(from, to, pathPaint);
     }
 
-    if (message == null) return;
+    // 노드
+    for (int i = 1; i <= total; i++) {
+      final center = _stageNodeCenter(i);
+      final bool isUnlocked = i <= unlocked;
+      final bool isCurrent = i == unlocked;
 
-    // 반투명 오버레이 배경
-    final overlayPaint = Paint()..color = const Color(0x80000000);
+      final baseColor = isUnlocked
+          ? (isCurrent ? const Color(0xFF00C853) : const Color(0xFF26A69A))
+          : const Color(0xFFBDBDBD);
+
+      final bgPaint = Paint()..color = baseColor;
+      final borderPaint = Paint()
+        ..color = isUnlocked ? const Color(0xFFFFFFFF) : const Color(0xFF9E9E9E)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = isCurrent ? 3.0 : 2.0;
+
+      final rrect = RRect.fromRectAndRadius(
+        Rect.fromCircle(center: center, radius: _nodeRadius),
+        const Radius.circular(30),
+      );
+
+      canvas.drawRRect(rrect, bgPaint);
+      canvas.drawRRect(rrect, borderPaint);
+
+      if (isUnlocked) {
+        _drawCenteredText(
+          canvas,
+          '$i',
+          center.translate(0, -4),
+          fontSize: 18,
+          color: const Color(0xFFFFFFFF),
+        );
+        if (isCurrent) {
+          _drawCenteredText(
+            canvas,
+            '★',
+            center.translate(0, 14),
+            fontSize: 12,
+            color: const Color(0xFFFFFFFF),
+          );
+        }
+      } else {
+        _drawCenteredText(
+          canvas,
+          '🔒',
+          center,
+          fontSize: 18,
+          color: const Color(0xFF424242),
+        );
+      }
+    }
+
+    _drawCenteredText(
+      canvas,
+      '스테이지 버블을 탭해서 시작',
+      Offset(size.x / 2, size.y * 0.88),
+      fontSize: 14,
+      color: const Color(0xFF000000),
+    );
+  }
+
+  void _renderResultOverlay(Canvas canvas) {
+    final overlayPaint = Paint()..color = const Color(0xC0000000);
     canvas.drawRect(
       Rect.fromLTWH(0, 0, size.x, size.y),
       overlayPaint,
     );
 
+    final title = _lastStageClear
+        ? 'Stage $_lastStageLevel 클리어!'
+        : 'Stage $_lastStageLevel 실패...';
+
     _drawCenteredText(
       canvas,
-      message,
-      Offset(size.x / 2, size.y * 0.4),
+      title,
+      Offset(size.x / 2, size.y * 0.32),
       fontSize: 24,
-      multiLine: true,
+      color: const Color(0xFFFFFFFF),
+    );
+
+    _drawCenteredText(
+      canvas,
+      '쓰러뜨린 몬스터: $defeatedMonsters / $totalMonstersInStage',
+      Offset(size.x / 2, size.y * 0.40),
+      fontSize: 14,
+      color: const Color(0xFFFFFFFF),
+    );
+
+    final retryRect = _resultRetryButtonRect();
+    final stageSelectRect = _resultStageSelectButtonRect();
+    final nextRect = _resultNextStageButtonRect();
+
+    _drawButton(canvas, retryRect, '다시하기');
+    _drawButton(canvas, stageSelectRect, '스테이지 선택');
+
+    final nextLevel = _lastStageLevel + 1;
+    final canGoNext = _lastStageClear &&
+        nextLevel <= maxStageLevel &&
+        kStageConfigs.containsKey(nextLevel);
+
+    _drawButton(
+      canvas,
+      nextRect,
+      '다음 스테이지',
+      enabled: canGoNext,
     );
   }
 
   // -----------------------------
-  // 텍스트 헬퍼
+  // 버튼 / 텍스트 헬퍼
   // -----------------------------
+  void _drawButton(
+    Canvas canvas,
+    Rect rect,
+    String label, {
+    bool enabled = true,
+  }) {
+    final bgColor = enabled ? const Color(0xFF3949AB) : const Color(0xFFB0BEC5);
+
+    final bgPaint = Paint()..color = bgColor;
+    final borderPaint = Paint()
+      ..color = const Color(0xFFFFFFFF)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+
+    final rrect = RRect.fromRectAndRadius(
+      rect,
+      const Radius.circular(8),
+    );
+
+    canvas.drawRRect(rrect, bgPaint);
+    canvas.drawRRect(rrect, borderPaint);
+
+    _drawCenteredText(
+      canvas,
+      label,
+      rect.center,
+      fontSize: 16,
+      color: const Color(0xFFFFFFFF),
+    );
+  }
+
   void _drawCenteredText(
     Canvas canvas,
     String text,
     Offset center, {
     double fontSize = 16,
     bool multiLine = false,
+    Color color = const Color(0xFFFFFFFF),
   }) {
     final tp = TextPainter(
       text: TextSpan(
         text: text,
         style: TextStyle(
-          color: const Color(0xFFFFFFFF),
+          color: color,
           fontSize: fontSize,
         ),
       ),
       textDirection: TextDirection.ltr,
       textAlign: TextAlign.center,
-      maxLines: multiLine ? null : 1,
+      maxLines: multiLine ? null : 3,
     )..layout();
 
     final offset = Offset(center.dx - tp.width / 2, center.dy - tp.height / 2);
