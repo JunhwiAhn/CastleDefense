@@ -171,6 +171,14 @@ class _Monster {
   MonsterType type;
   double damageFlashTimer = 0.0; // 데미지 점멸 타이머
   double displayHp; // 표시용 HP (부드러운 감소용)
+  double lastHitTime = 0.0; // 마지막 피격 시간 (중복 데미지 방지용)
+  _CharacterUnit? aggroTarget; // 어그로 타겟 (탱커에게 끌림)
+  bool attackingCastle = false; // 성을 공격 중인지 여부
+  double castleAttackTimer = 0.0; // 성 공격 타이머
+
+  // スプライトアニメーション用
+  double animationTimer = 0.0; // アニメーションタイマー
+  int currentFrame = 0; // 現在のフレーム (0-3)
 
   _Monster({
     required this.pos,
@@ -189,6 +197,8 @@ class _Projectile {
   double damage;
   RoleType sourceRole; // 발사한 캐릭터의 역할 (이펙트 색상용)
   _Monster? targetMonster; // 유도 미사일용 타겟
+  double splashRadius; // 스플래시 데미지 범위 (0이면 단일 타겟)
+  bool isMagic; // 마법 투사물 여부 (스플래시 효과용)
 
   _Projectile({
     required this.pos,
@@ -196,6 +206,8 @@ class _Projectile {
     required this.damage,
     required this.sourceRole,
     this.targetMonster,
+    this.splashRadius = 0.0,
+    this.isMagic = false,
   });
 }
 
@@ -212,6 +224,15 @@ class _CharacterUnit {
   bool movingTowardsTarget; // 타겟을 향해 이동 중인지
   bool hasAttackSpeedBuff = false; // 공격속도 버프 보유 여부
   bool hasMoveSpeedBuff = false; // 이동속도 버프 보유 여부
+
+  // 전사 검 휘두르기 애니메이션
+  double swordSwingAngle = 0.0; // 현재 검 각도 (라디안)
+  bool isSwinging = false; // 검을 휘두르는 중인지
+  double swingProgress = 0.0; // 휘두르기 진행도 (0.0 ~ 1.0)
+
+  // 총잡이 연속 발사
+  int burstShotsRemaining = 0; // 남은 연속 발사 수
+  double burstTimer = 0.0; // 연속 발사 타이머
 
   _CharacterUnit({
     required this.instanceId,
@@ -283,6 +304,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   // 라운드 시간 제한
   double roundTimer = 0.0; // 현재 라운드 경과 시간
   double roundTimeLimit = 120.0; // 현재 라운드 제한 시간 (초)
+  double gameTime = 0.0; // 전역 게임 시간 (충돌 데미지 쿨다운용)
 
   // 로딩 화면용
   double _loadingTimer = 0.0;
@@ -350,11 +372,18 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   // 랜덤
   final Random _random = Random();
 
+  // Goblinスプライト
+  Image? goblinImage;
+  bool goblinImageLoaded = false;
+
   // 캐릭터 설정
   final double characterUnitRadius = 12.0; // 캐릭터 크기
   final double projectileSpeed = 200.0; // 투사물 속도
   final double meleeRange = 40.0; // 근거리 공격 범위
-  final double rangedRange = 250.0; // 원거리 공격 범위
+  final double rangedRange = 375.0; // 원거리 공격 범위 (250 * 1.5)
+  final double physicalDealerRange = 525.0; // 물리 딜러 사거리 (350 * 1.5)
+  final double priestRange = 600.0; // 힐러(성직자) 사거리 (400 * 1.5)
+  final double topBoundary = 100.0; // 캐릭터가 올라갈 수 없는 상단 영역
 
   int get killedMonsters => defeatedMonsters;
 
@@ -368,6 +397,19 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     _loadStage(1); // 내부 파라미터 초기화
     gameState = GameState.loading; // GameScreen 진입 즉시 로딩부터 시작
     _loadingTimer = 0.0;
+
+    // Goblinスプライトをロード
+    await _loadGoblinSprite();
+  }
+
+  // Goblinスプライトをロード
+  Future<void> _loadGoblinSprite() async {
+    try {
+      goblinImage = await images.load('goblin.png');
+      goblinImageLoaded = true;
+    } catch (e) {
+      goblinImageLoaded = false;
+    }
   }
 
   // 캐릭터 슬롯 초기화 (처음에는 모두 비어있음)
@@ -505,6 +547,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   void _updatePlaying(double dt) {
     if (size.x <= 0 || size.y <= 0) return;
 
+    // 전역 게임 시간 업데이트
+    gameTime += dt;
+
     // 라운드 타이머 업데이트
     roundTimer += dt;
 
@@ -517,6 +562,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     _updateMonsters(dt);
     _updateCharacterUnits(dt); // 캐릭터 유닛 업데이트
     _updateProjectiles(dt); // 투사물 업데이트
+    _checkCharacterMonsterCollisions(); // 캐릭터-몬스터 충돌 체크
 
     // 현재 라운드의 몬스터 스폰
     if (spawnedMonsters < totalMonstersInRound) {
@@ -568,6 +614,16 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         m.damageFlashTimer -= dt;
       }
 
+      // スプライトアニメーション更新 (歩行中のみ)
+      if (m.walking || m.falling) {
+        m.animationTimer += dt;
+        const double frameTime = 0.15; // 각 프레임 0.15초
+        if (m.animationTimer >= frameTime) {
+          m.animationTimer = 0.0;
+          m.currentFrame = (m.currentFrame + 1) % 4; // 4프레임 순환
+        }
+      }
+
       // 표시용 HP를 실제 HP로 부드럽게 감소 (롤 스타일)
       if (m.displayHp > m.hp) {
         m.displayHp -= dt * 100.0; // 초당 100 HP씩 감소
@@ -584,27 +640,78 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
           m.walking = true;
         }
       } else if (m.walking) {
-        final dx = castleCenterX - m.pos.x;
+        // 어그로 타겟 설정 (탱커 우선)
+        _updateMonsterAggro(m);
 
-        if (dx.abs() < castleHitWidth / 2) {
-          // 보스/미니보스가 성에 도달하면 즉시 게임오버
+        // 어그로 타겟이 있으면 그쪽으로, 없으면 성으로
+        double targetX;
+        if (m.aggroTarget != null && characterUnits.contains(m.aggroTarget)) {
+          targetX = m.aggroTarget!.pos.x;
+        } else {
+          targetX = castleCenterX;
+        }
+
+        final dx = targetX - m.pos.x;
+
+        // 성에 도달 체크 (어그로가 없을 때만)
+        if (m.aggroTarget == null && dx.abs() < castleHitWidth / 2) {
+          // 보스/미니보스가 성에 도달하면 지속적으로 데미지
           if (m.type == MonsterType.boss || m.type == MonsterType.miniBoss) {
-            castleHp = 0; // 성 체력을 0으로 만들어 게임오버 트리거
-            _onGameOver();
-            return;
+            m.attackingCastle = true;
+            m.castleAttackTimer += dt;
+
+            // 공격 간격: 보스 1초마다 2데미지, 미니보스 1.5초마다 1데미지
+            final attackInterval = m.type == MonsterType.boss ? 1.0 : 1.5;
+            final damage = m.type == MonsterType.boss ? 2 : 1;
+
+            if (m.castleAttackTimer >= attackInterval) {
+              m.castleAttackTimer = 0.0;
+              castleHp = max(0, castleHp - damage);
+            }
+            continue; // 성을 공격하는 동안 이동하지 않음
           }
 
-          // 일반 몬스터는 성 HP만 감소
+          // 일반 몬스터는 성 HP만 감소하고 사라짐
           castleHp = max(0, castleHp - 1);
           monsters.removeAt(i);
           escapedMonsters++; // 성에 도달한 몬스터 (처치 실패)
           continue;
+        } else {
+          // 성에서 벗어나면 공격 상태 해제
+          m.attackingCastle = false;
+          m.castleAttackTimer = 0.0;
         }
 
         final dir = dx == 0 ? 0.0 : dx.sign;
         m.pos.x += dir * monsterWalkSpeed * dt;
         m.pos.x = m.pos.x.clamp(monsterRadius, size.x - monsterRadius);
       }
+    }
+  }
+
+  // 몬스터 어그로 업데이트 (탱커에게 끌림)
+  void _updateMonsterAggro(_Monster monster) {
+    const double aggroRange = 200.0; // 어그로 범위 (전사가 더 넓게 어그로 끌기)
+
+    // 가장 가까운 탱커 찾기
+    _CharacterUnit? nearestTanker;
+    double minDistance = double.infinity;
+
+    for (final unit in characterUnits) {
+      if (unit.definition.role == RoleType.tanker) {
+        final distance = (unit.pos - monster.pos).length;
+        if (distance < aggroRange && distance < minDistance) {
+          minDistance = distance;
+          nearestTanker = unit;
+        }
+      }
+    }
+
+    // 범위 내에 탱커가 있으면 어그로 설정, 없으면 해제
+    if (nearestTanker != null) {
+      monster.aggroTarget = nearestTanker;
+    } else {
+      monster.aggroTarget = null;
     }
   }
 
@@ -746,18 +853,26 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
             break;
 
           case RoleType.physicalDealer:
-            // 물리딜러: 원거리 투사물 공격 (1 데미지, 기본 사거리, 빠른 공격속도)
-            _handleRangedUnit(unit, target, distance, dt, 1.0, rangedRange, 3.0, moveSpeedBuff);
+            // 물리딜러: 클래스에 따라 다른 공격 방식 (증가된 사거리 적용)
+            if (unit.definition.classType == ClassType.archer) {
+              // 궁수: 3발 동시 발사
+              _handleArcherUnit(unit, target, distance, dt, 1.0, physicalDealerRange, moveSpeedBuff);
+            } else if (unit.definition.classType == ClassType.gunslinger) {
+              // 총잡이: 연속 발사 (두두두)
+              _handleGunslingerUnit(unit, target, distance, dt, 1.0, physicalDealerRange, moveSpeedBuff);
+            } else {
+              _handleRangedUnit(unit, target, distance, dt, 1.0, physicalDealerRange, 3.0, moveSpeedBuff);
+            }
             break;
 
           case RoleType.magicDealer:
-            // 마법딜러: 원거리 투사물 공격 (1 데미지, 긴 사거리, 기본 공격속도)
-            _handleRangedUnit(unit, target, distance, dt, 1.0, rangedRange * 1.5, 2.0, moveSpeedBuff);
+            // 마법딜러: 스플래시 데미지
+            _handleMagicUnit(unit, target, distance, dt, 1.0, rangedRange * 1.5, moveSpeedBuff);
             break;
 
           case RoleType.priest:
-            // 성직자: 원거리 공격 (1 데미지, 기본 사거리, 느린 공격속도) + 버프는 위에서 이미 적용됨
-            _handleRangedUnit(unit, target, distance, dt, 1.0, rangedRange, 1.5, moveSpeedBuff);
+            // 성직자: 원거리 공격 (1 데미지, 증가된 사거리, 느린 공격속도) + 버프는 위에서 이미 적용됨
+            _handleRangedUnit(unit, target, distance, dt, 1.0, priestRange, 1.5, moveSpeedBuff);
             break;
 
           case RoleType.utility:
@@ -787,21 +902,65 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     return nearest;
   }
 
-  // 근거리 유닛 처리
+  // 근거리 유닛 처리 (전사: 범위 검 휘두르기)
   void _handleMeleeUnit(_CharacterUnit unit, _Monster target, double distance, double dt, double damage, double moveSpeedBuff) {
-    if (distance > meleeRange) {
-      // 타겟까지 이동 (이동속도 버프 적용)
+    final double swordRange = 60.0; // 검 휘두르기 범위
+    final double swingDuration = 0.4; // 휘두르기 시간 (초)
+
+    // 검 휘두르기 애니메이션 업데이트
+    if (unit.isSwinging) {
+      unit.swingProgress += dt / swingDuration;
+
+      // 반시계방향으로 검 회전 (0도에서 -270도까지)
+      unit.swordSwingAngle = -unit.swingProgress * 4.71239; // -270도 (라디안)
+
+      // 휘두르기 진행 중 범위 내 모든 적에게 데미지
+      if (unit.swingProgress >= 0.25 && unit.swingProgress < 0.75) {
+        // 휘두르기 중간 지점에서 범위 내 모든 몬스터에게 데미지
+        for (final monster in monsters) {
+          final monsterDist = (monster.pos - unit.pos).length;
+          if (monsterDist <= swordRange && monster.lastHitTime < unit.swingProgress - 0.1) {
+            // 검이 지나가는 각도에 있는 몬스터만 타격
+            final dx = monster.pos.x - unit.pos.x;
+            final dy = monster.pos.y - unit.pos.y;
+            final monsterAngle = atan2(dy, dx);
+
+            // 현재 검 각도 범위 내에 있는지 확인
+            final angleDiff = (monsterAngle - unit.swordSwingAngle).abs();
+            if (angleDiff < 1.0 || angleDiff > 5.28) {
+              // 약 60도 범위 또는 360도 넘어간 경우
+              _damageMonster(monster, damage.toInt());
+              monster.lastHitTime = unit.swingProgress;
+            }
+          }
+        }
+      }
+
+      // 휘두르기 완료
+      if (unit.swingProgress >= 1.0) {
+        unit.isSwinging = false;
+        unit.swingProgress = 0.0;
+        unit.swordSwingAngle = 0.0;
+        // 쿨다운 설정
+        unit.attackCooldown = 1.0 / (unit.attackSpeed * 1.5);
+      }
+      return;
+    }
+
+    // 적을 향해 이동
+    if (distance > swordRange * 0.7) {
       final dir = (target.pos - unit.pos).normalized();
       unit.pos += dir * unit.moveSpeed * moveSpeedBuff * dt;
+      // 상단 경계 제한 적용
+      unit.pos.y = unit.pos.y.clamp(topBoundary, size.y);
       unit.movingTowardsTarget = true;
     } else {
-      // 사거리 내: 공격
+      // 사거리 내: 검 휘두르기 시작
       unit.movingTowardsTarget = false;
-      if (unit.attackCooldown <= 0) {
-        // 공격 실행
-        _damageMonster(target, damage.toInt());
-        // 쿨다운 설정 (공격속도의 역수, 2배 빠르게)
-        unit.attackCooldown = 1.0 / (unit.attackSpeed * 2.0);
+      if (unit.attackCooldown <= 0 && !unit.isSwinging) {
+        unit.isSwinging = true;
+        unit.swingProgress = 0.0;
+        unit.swordSwingAngle = 0.0;
       }
     }
   }
@@ -821,6 +980,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       // 타겟까지 이동 (사거리 내로, 이동속도 버프 적용)
       final dir = (target.pos - unit.pos).normalized();
       unit.pos += dir * unit.moveSpeed * moveSpeedBuff * dt;
+      // 상단 경계 제한 적용
+      unit.pos.y = unit.pos.y.clamp(topBoundary, size.y);
       unit.movingTowardsTarget = true;
     } else {
       // 사거리 내: 정지하고 공격
@@ -830,6 +991,123 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         _fireProjectile(unit, target, damage);
         // 쿨다운 설정 (역할별 공격속도 배율 적용)
         unit.attackCooldown = 1.0 / (unit.attackSpeed * attackSpeedMultiplier);
+      }
+    }
+  }
+
+  // 궁수 유닛 처리 (3발 동시 발사)
+  void _handleArcherUnit(
+    _CharacterUnit unit,
+    _Monster target,
+    double distance,
+    double dt,
+    double damage,
+    double attackRange,
+    double moveSpeedBuff,
+  ) {
+    if (distance > attackRange) {
+      final dir = (target.pos - unit.pos).normalized();
+      unit.pos += dir * unit.moveSpeed * moveSpeedBuff * dt;
+      // 상단 경계 제한 적용
+      unit.pos.y = unit.pos.y.clamp(topBoundary, size.y);
+      unit.movingTowardsTarget = true;
+    } else {
+      unit.movingTowardsTarget = false;
+      if (unit.attackCooldown <= 0) {
+        // 3발 동시 발사 (부채꼴 모양)
+        final baseDirection = (target.pos - unit.pos).normalized();
+        const double spreadAngle = 0.25; // 약 15도
+
+        for (int i = -1; i <= 1; i++) {
+          final angle = atan2(baseDirection.y, baseDirection.x) + (i * spreadAngle);
+          final direction = Vector2(cos(angle), sin(angle));
+          final velocity = direction * projectileSpeed;
+
+          projectiles.add(_Projectile(
+            pos: Vector2(unit.pos.x, unit.pos.y),
+            velocity: velocity,
+            damage: damage,
+            sourceRole: unit.definition.role,
+            targetMonster: i == 0 ? target : null, // 중앙 화살만 유도
+          ));
+        }
+        unit.attackCooldown = 1.0 / (unit.attackSpeed * 2.0);
+      }
+    }
+  }
+
+  // 총잡이 유닛 처리 (연속 발사)
+  void _handleGunslingerUnit(
+    _CharacterUnit unit,
+    _Monster target,
+    double distance,
+    double dt,
+    double damage,
+    double attackRange,
+    double moveSpeedBuff,
+  ) {
+    // 연속 발사 처리
+    if (unit.burstShotsRemaining > 0) {
+      unit.burstTimer -= dt;
+      if (unit.burstTimer <= 0) {
+        // 연속 발사 중 한 발 발사
+        _fireProjectile(unit, target, damage);
+        unit.burstShotsRemaining--;
+        unit.burstTimer = 0.08; // 0.08초 간격으로 발사
+      }
+      return;
+    }
+
+    if (distance > attackRange) {
+      final dir = (target.pos - unit.pos).normalized();
+      unit.pos += dir * unit.moveSpeed * moveSpeedBuff * dt;
+      // 상단 경계 제한 적용
+      unit.pos.y = unit.pos.y.clamp(topBoundary, size.y);
+      unit.movingTowardsTarget = true;
+    } else {
+      unit.movingTowardsTarget = false;
+      if (unit.attackCooldown <= 0) {
+        // 연속 발사 시작 (5발)
+        unit.burstShotsRemaining = 5;
+        unit.burstTimer = 0.0;
+        unit.attackCooldown = 1.0 / (unit.attackSpeed * 1.5);
+      }
+    }
+  }
+
+  // 마법사 유닛 처리 (스플래시 데미지)
+  void _handleMagicUnit(
+    _CharacterUnit unit,
+    _Monster target,
+    double distance,
+    double dt,
+    double damage,
+    double attackRange,
+    double moveSpeedBuff,
+  ) {
+    if (distance > attackRange) {
+      final dir = (target.pos - unit.pos).normalized();
+      unit.pos += dir * unit.moveSpeed * moveSpeedBuff * dt;
+      // 상단 경계 제한 적용
+      unit.pos.y = unit.pos.y.clamp(topBoundary, size.y);
+      unit.movingTowardsTarget = true;
+    } else {
+      unit.movingTowardsTarget = false;
+      if (unit.attackCooldown <= 0) {
+        // 스플래시 마법 투사물 발사
+        final direction = (target.pos - unit.pos).normalized();
+        final velocity = direction * (projectileSpeed * 0.7); // 약간 느린 속도
+
+        projectiles.add(_Projectile(
+          pos: Vector2(unit.pos.x, unit.pos.y),
+          velocity: velocity,
+          damage: damage,
+          sourceRole: unit.definition.role,
+          targetMonster: target,
+          splashRadius: 50.0, // 스플래시 범위
+          isMagic: true,
+        ));
+        unit.attackCooldown = 1.0 / (unit.attackSpeed * 1.5);
       }
     }
   }
@@ -858,6 +1136,42 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       if (index != -1) {
         _killMonsterAtIndex(index);
       }
+    }
+  }
+
+  // 캐릭터-몬스터 충돌 체크 (뱀파이어 서바이버 스타일)
+  void _checkCharacterMonsterCollisions() {
+    const double collisionDamage = 1; // 충돌 데미지
+    const double hitCooldown = 0.2; // 0.2초 쿨다운
+
+    for (final unit in characterUnits) {
+      for (final monster in monsters) {
+        // 충돌 체크
+        final distance = (unit.pos - monster.pos).length;
+        final collisionRadius = characterUnitRadius + _getMonsterRadius(monster);
+
+        if (distance < collisionRadius) {
+          // 충돌 발생! 쿨다운 체크
+          if (gameTime - monster.lastHitTime >= hitCooldown) {
+            // 데미지 적용
+            _damageMonster(monster, collisionDamage.toInt());
+            monster.lastHitTime = gameTime; // 마지막 피격 시간 갱신
+          }
+        }
+      }
+    }
+  }
+
+  // 몬스터 반지름 가져오기
+  double _getMonsterRadius(_Monster monster) {
+    switch (monster.type) {
+      case MonsterType.boss:
+        return monsterRadius * 2.0;
+      case MonsterType.miniBoss:
+        return monsterRadius * 1.5;
+      case MonsterType.normal:
+      default:
+        return monsterRadius;
     }
   }
 
@@ -915,8 +1229,19 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
         // 충돌 판정을 더 관대하게 (히트박스 +8)
         if (dist <= hitRadius + 8.0) {
-          // 충돌! 데미지 적용
-          _damageMonster(monster, proj.damage.toInt());
+          // 스플래시 데미지 처리
+          if (proj.isMagic && proj.splashRadius > 0) {
+            // 마법 투사물: 범위 내 모든 몬스터에게 데미지
+            for (final splashTarget in monsters) {
+              final splashDist = (proj.pos - splashTarget.pos).length;
+              if (splashDist <= proj.splashRadius) {
+                _damageMonster(splashTarget, proj.damage.toInt());
+              }
+            }
+          } else {
+            // 일반 투사물: 단일 타겟 데미지
+            _damageMonster(monster, proj.damage.toInt());
+          }
           hit = true;
           break;
         }
@@ -2049,14 +2374,38 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
           break;
       }
 
-      // 데미지 플래시 효과
-      if (m.damageFlashTimer > 0) {
-        // 빨간색으로 점멸
-        final flashPaint = Paint()..color = const Color(0xFFFF0000);
-        canvas.drawCircle(center, radius, flashPaint);
+      // 一般モンスター(Stage1)はGoblinスプライトを使用
+      if (m.type == MonsterType.normal && goblinImageLoaded && goblinImage != null && stageLevel == 1) {
+        _renderGoblinSprite(canvas, m, radius);
       } else {
-        final monsterPaint = Paint()..color = monsterColor;
-        canvas.drawCircle(center, radius, monsterPaint);
+        // 데미지 플래시 효과
+        if (m.damageFlashTimer > 0) {
+          // 빨간색으로 점멸
+          final flashPaint = Paint()..color = const Color(0xFFFF0000);
+          canvas.drawCircle(center, radius, flashPaint);
+        } else {
+          final monsterPaint = Paint()..color = monsterColor;
+          canvas.drawCircle(center, radius, monsterPaint);
+        }
+      }
+
+      // 보스/미니보스가 성을 공격 중일 때 효과
+      if (m.attackingCastle && (m.type == MonsterType.boss || m.type == MonsterType.miniBoss)) {
+        // 공격 표시 (빨간색 펄스 링)
+        final attackPaint = Paint()
+          ..color = const Color(0xFFFF0000).withValues(alpha: 0.5 + 0.5 * (m.castleAttackTimer % 1.0))
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3.0;
+        canvas.drawCircle(center, radius + 5, attackPaint);
+
+        // "공격 중!" 텍스트
+        _drawCenteredText(
+          canvas,
+          '⚔️',
+          Offset(center.dx, center.dy - radius - 15),
+          fontSize: 16,
+          color: const Color(0xFFFF0000),
+        );
       }
 
       // 보스/미니보스가 아닌 경우 기존 HP 바
@@ -2092,6 +2441,42 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
     // 보스/미니보스 HP 바 (화면 상단에 크게)
     _renderBossHealthBar(canvas);
+  }
+
+  // Goblinスプライトレンダリング
+  void _renderGoblinSprite(Canvas canvas, _Monster m, double radius) {
+    if (goblinImage == null) return;
+
+    // 歩行アニメーション効果 (上下に軽く揺れる)
+    final bounceOffset = [0.0, -2.0, 0.0, 2.0][m.currentFrame];
+    final center = Offset(m.pos.x, m.pos.y + bounceOffset);
+
+    // スプライトシートのフレームサイズ (画像は1枚のみなので全体を使用)
+    final imgWidth = goblinImage!.width.toDouble();
+    final imgHeight = goblinImage!.height.toDouble();
+
+    // 描画サイズ (radiusの2.5倍で表示)
+    final drawSize = radius * 2.5;
+
+    // ソース矩形 (画像全体)
+    final srcRect = Rect.fromLTWH(0, 0, imgWidth, imgHeight);
+
+    // 目標矩形 (中心に描画)
+    final dstRect = Rect.fromCenter(
+      center: center,
+      width: drawSize,
+      height: drawSize,
+    );
+
+    // ダメージフラッシュ時は赤いオーバーレイ
+    if (m.damageFlashTimer > 0) {
+      // 赤く染めるためにColorFilterを使用
+      final flashPaint = Paint()
+        ..colorFilter = const ColorFilter.mode(Color(0xFFFF0000), BlendMode.srcATop);
+      canvas.drawImageRect(goblinImage!, srcRect, dstRect, flashPaint);
+    } else {
+      canvas.drawImageRect(goblinImage!, srcRect, dstRect, Paint());
+    }
   }
 
   // 보스 HP 바 렌더링 (화면 상단)
@@ -2200,6 +2585,77 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       final unitPaint = Paint()..color = unitColor;
       canvas.drawCircle(center, characterUnitRadius, unitPaint);
 
+      // 전사 검 휘두르기 효과 렌더링
+      if (unit.definition.role == RoleType.tanker && unit.isSwinging) {
+        const double swordLength = 50.0;
+        const double swordWidth = 6.0;
+        const double arcRadius = 55.0;
+
+        // 검 휘두르기 궤적 (반시계방향 호)
+        final arcPaint = Paint()
+          ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.3)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 8.0;
+
+        // 휘두르기 진행에 따른 호 그리기
+        final sweepAngle = -unit.swingProgress * 4.71239; // 반시계방향
+        canvas.drawArc(
+          Rect.fromCircle(center: center, radius: arcRadius),
+          0, // 시작 각도 (오른쪽부터)
+          sweepAngle,
+          false,
+          arcPaint,
+        );
+
+        // 검 그리기
+        canvas.save();
+        canvas.translate(center.dx, center.dy);
+        canvas.rotate(unit.swordSwingAngle);
+
+        // 검 몸통 (흰색)
+        final swordPaint = Paint()
+          ..color = const Color(0xFFE0E0E0)
+          ..style = PaintingStyle.fill;
+        canvas.drawRect(
+          Rect.fromLTWH(characterUnitRadius, -swordWidth / 2, swordLength, swordWidth),
+          swordPaint,
+        );
+
+        // 검 테두리 (어두운 색)
+        final swordBorderPaint = Paint()
+          ..color = const Color(0xFF616161)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5;
+        canvas.drawRect(
+          Rect.fromLTWH(characterUnitRadius, -swordWidth / 2, swordLength, swordWidth),
+          swordBorderPaint,
+        );
+
+        // 검 끝부분 (삼각형)
+        final tipPath = Path()
+          ..moveTo(characterUnitRadius + swordLength, -swordWidth / 2)
+          ..lineTo(characterUnitRadius + swordLength + 10, 0)
+          ..lineTo(characterUnitRadius + swordLength, swordWidth / 2)
+          ..close();
+        canvas.drawPath(tipPath, swordPaint);
+        canvas.drawPath(tipPath, swordBorderPaint);
+
+        // 검 손잡이 (갈색)
+        final handlePaint = Paint()..color = const Color(0xFF8D6E63);
+        canvas.drawRect(
+          Rect.fromLTWH(characterUnitRadius - 5, -swordWidth / 2 - 2, 8, swordWidth + 4),
+          handlePaint,
+        );
+
+        canvas.restore();
+
+        // 휘두르기 범위 표시 (반투명 원)
+        final rangePaint = Paint()
+          ..color = const Color(0xFFFF5722).withValues(alpha: 0.15)
+          ..style = PaintingStyle.fill;
+        canvas.drawCircle(center, 60.0, rangePaint);
+      }
+
       // 역할 이모지 표시
       _drawCenteredText(
         canvas,
@@ -2209,21 +2665,22 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         color: const Color(0xFFFFFFFF),
       );
 
-      // HP 바 (간단하게)
-      const double hpBarWidth = 24.0;
-      const double hpBarHeight = 3.0;
-      const double hpBarMargin = 2.0;
+      // HP 바 (크고 명확하게)
+      const double hpBarWidth = 32.0;
+      const double hpBarHeight = 4.0;
+      const double hpBarMargin = 3.0;
 
       final hpRatio = unit.maxHp == 0 ? 0 : unit.currentHp / unit.maxHp;
       final hpBarX = center.dx - hpBarWidth / 2;
       final hpBarY = center.dy - characterUnitRadius - hpBarHeight - hpBarMargin;
 
-      final hpBgPaint = Paint()..color = const Color(0xFF555555);
-      final hpFgPaint = Paint()..color = const Color(0xFF66BB6A);
-
+      // HP 바 배경 (검은색)
+      final hpBgPaint = Paint()..color = const Color(0xFF000000);
       final hpBgRect = Rect.fromLTWH(hpBarX, hpBarY, hpBarWidth, hpBarHeight);
       canvas.drawRect(hpBgRect, hpBgPaint);
 
+      // HP 바 전경 (초록색)
+      final hpFgPaint = Paint()..color = const Color(0xFF4CAF50);
       final hpFgRect = Rect.fromLTWH(
         hpBarX,
         hpBarY,
@@ -2231,6 +2688,13 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         hpBarHeight,
       );
       canvas.drawRect(hpFgRect, hpFgPaint);
+
+      // HP 바 테두리 (흰색)
+      final hpBorderPaint = Paint()
+        ..color = const Color(0xFFFFFFFF)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0;
+      canvas.drawRect(hpBgRect, hpBorderPaint);
 
       // 버프 아이콘 표시 (우측 상단)
       if (unit.hasAttackSpeedBuff) {
@@ -2276,18 +2740,39 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
           break;
       }
 
-      final projPaint = Paint()..color = projColor;
-      canvas.drawCircle(center, 4.0, projPaint); // 작은 원
+      // 마법 투사물 (스플래시)은 더 크게 표시
+      if (proj.isMagic) {
+        // 스플래시 범위 표시 (반투명)
+        final splashPaint = Paint()
+          ..color = projColor.withValues(alpha: 0.2)
+          ..style = PaintingStyle.fill;
+        canvas.drawCircle(center, proj.splashRadius * 0.5, splashPaint);
 
-      // 투사물 꼬리 효과 (간단한 선)
-      final tailStart = Offset(
-        proj.pos.x - proj.velocity.x * 0.05,
-        proj.pos.y - proj.velocity.y * 0.05,
-      );
-      final tailPaint = Paint()
-        ..color = projColor.withOpacity(0.5)
-        ..strokeWidth = 2.0;
-      canvas.drawLine(tailStart, center, tailPaint);
+        // 마법 구체 (더 큰 원)
+        final magicPaint = Paint()..color = projColor;
+        canvas.drawCircle(center, 8.0, magicPaint);
+
+        // 마법 외곽 효과
+        final glowPaint = Paint()
+          ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.5)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.0;
+        canvas.drawCircle(center, 10.0, glowPaint);
+      } else {
+        // 일반 투사물
+        final projPaint = Paint()..color = projColor;
+        canvas.drawCircle(center, 4.0, projPaint); // 작은 원
+
+        // 투사물 꼬리 효과 (간단한 선)
+        final tailStart = Offset(
+          proj.pos.x - proj.velocity.x * 0.05,
+          proj.pos.y - proj.velocity.y * 0.05,
+        );
+        final tailPaint = Paint()
+          ..color = projColor.withValues(alpha: 0.5)
+          ..strokeWidth = 2.0;
+        canvas.drawLine(tailStart, center, tailPaint);
+      }
     }
   }
 
