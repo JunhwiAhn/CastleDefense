@@ -5705,4 +5705,48 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       color: const Color(0xFFAAAAAA),
     );
   }
+
+  // ============================================================
+  // D-2-4: 메인 캐릭터 사망 카운트다운 UI
+  // - 화면 중앙에 큰 숫자 표시 (5→4→3→2→1)
+  // - 사용법: Engineer가 mainCharReviveCountdown 변수 추가 후 아래 메서드를 render()에서 호출
+  //   if (mainCharReviveCountdown > 0) _renderReviveCountdown(canvas, mainCharReviveCountdown);
+  // ============================================================
+  void _renderReviveCountdown(Canvas canvas, double countdown) {
+    // 반투명 오버레이
+    final overlayPaint = Paint()..color = const Color(0x80000000);
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y), overlayPaint);
+
+    // 카운트다운 숫자 (올림 처리: 0.1초 남아도 "1"로 표시)
+    final int countInt = countdown.ceil().clamp(1, 5);
+
+    // 숫자 색상: 빨간→주황→노랑 (시간이 줄수록 다급해지는 느낌)
+    final Color countColor;
+    if (countInt >= 4) {
+      countColor = const Color(0xFFFF5252); // 빨강
+    } else if (countInt >= 2) {
+      countColor = const Color(0xFFFF6E40); // 주황
+    } else {
+      countColor = const Color(0xFFFFEB3B); // 노랑
+    }
+
+    // 큰 숫자
+    _drawCenteredText(
+      canvas,
+      '$countInt',
+      Offset(size.x / 2, size.y / 2 - 20),
+      fontSize: 80,
+      color: countColor,
+    );
+
+    // "REVIVING..." 서브텍스트 (점멸: sin 파형으로 알파 제어)
+    final double alpha = (0.5 + 0.5 * sin(gameTime * 6)).clamp(0.3, 1.0);
+    _drawCenteredText(
+      canvas,
+      'REVIVING...',
+      Offset(size.x / 2, size.y / 2 + 50),
+      fontSize: 16,
+      color: Color.fromRGBO(255, 255, 255, alpha),
+    );
+  }
 }
