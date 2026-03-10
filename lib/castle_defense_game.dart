@@ -18,8 +18,21 @@ enum GameState {
   roundSelect, // 라운드 선택 (맵 스타일)
   playing, // 실제 전투
   paused, // 일시정지
+  levelUp, // 리디자인 B-2-11: 레벨업 바프 카드 선택 (게임 일시정지)
   roundClear, // 라운드 클리어 (잠깐 멈춤)
   result, // 결과 화면 (클리어 or 실패)
+}
+
+// 리디자인 B-2-11: 바프 타입 (P-2-1 기준 8종)
+enum BuffType {
+  attackUp,    // 공격력 +15% (최대 5회)
+  attackSpdUp, // 공격 간격 -10% (최대 5회)
+  moveSpeedUp, // 이동속도 +20% (최대 3회)
+  rangeUp,     // 사거리 +15% (최대 3회)
+  castleRepair, // 성 HP +20 (무제한)
+  towerPowerUp, // 전체 타워 공격력 +10% (최대 5회)
+  xpMagnetUp,  // 젬 회수 반경 +15px (최대 3회)
+  castleBarrier, // 10초 성 무적 (무제한)
 }
 
 enum BottomMenu {
@@ -399,7 +412,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
   // 라운드 클리어 대기용
   double _roundClearTimer = 0.0;
-  final double _roundClearDuration = 2.0; // 2초 대기
+  final double _roundClearDuration = 3.0; // 리디자인 B-2-18: 라운드 간 3초 인터벌
 
   // 라운드 언락 상태
   int unlockedRoundMax = 1; // 처음엔 라운드 1만 선택 가능
@@ -453,6 +466,22 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   int playerXp = 0;
   int playerCharLevel = 1;
   bool _pendingLevelUp = false; // 레벨업 대기 (버프 카드 표시 트리거)
+  // 리디자인 B-2-11: 바프 스택 카운터 (P-2-1 기준)
+  int _atkUpCount = 0;       // 공격력 UP 스택 (최대 5)
+  int _spdUpCount = 0;       // 공격속도 UP 스택 (최대 5)
+  int _moveUpCount = 0;      // 이동속도 UP 스택 (최대 3)
+  int _rangeUpCount = 0;     // 사거리 UP 스택 (최대 3)
+  int _towerUpCount = 0;     // 타워강화 스택 (최대 5)
+  int _magnetCount = 0;      // XP 자석 스택 (최대 3)
+  bool _castleBarrierActive = false; // 성 바리어 활성 여부
+  double _castleBarrierTimer = 0.0;  // 바리어 남은 시간
+  static const double _castleBarrierDuration = 10.0;
+  // 레벨업 바프 선택지 (3장)
+  List<BuffType> _buffOptions = [];
+  BuffType? _lastChosenBuff; // 직전 선택 바프 (50% 확률 감소용)
+  // 리디자인 B-2-12: XP 자석 범위 (레벨업 직후 1초간 전체 흡인)
+  double _xpMagnetTimer = 0.0; // 자석 효과 남은 시간
+  static const double _xpMagnetDuration = 1.0;
   int playerGem = 500; // 뽑기 테스트용으로 많이 줌
   int playerEnergy = 50;
   int playerMaxEnergy = 50;
@@ -722,6 +751,13 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       case GameState.paused:
         // 일시정지 중에는 업데이트 하지 않음
         return;
+      case GameState.levelUp:
+        // 리디자인 B-2-11/B-2-12: 레벨업 화면 - 젬 자석 타이머만 진행
+        if (_xpMagnetTimer > 0) {
+          _xpMagnetTimer -= dt;
+          _attractAllXpGems();
+        }
+        return;
       case GameState.roundClear:
         _updateRoundClear(dt);
         return;
@@ -785,6 +821,14 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     _updateGoldDrops(); // 리디자인 B-2-15: 골드 드롭 회수
     // D-3-1: 성 피격 점멸 타이머 감소
     if (castleFlashTimer > 0) castleFlashTimer -= dt;
+    // 리디자인 B-2-20: 성 바리어 타이머 업데이트
+    if (_castleBarrierActive) {
+      _castleBarrierTimer -= dt;
+      if (_castleBarrierTimer <= 0) {
+        _castleBarrierActive = false;
+        _castleBarrierTimer = 0.0;
+      }
+    }
 
     // 현재 라운드의 몬스터 스폰
     if (spawnedMonsters < totalMonstersInRound) {
@@ -794,7 +838,10 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         final roundCfg = cfg.rounds[currentRound - 1];
         if (spawnTimer >= roundCfg.spawnInterval) {
           spawnTimer = 0.0;
-          _spawnMonster();
+          // 리디자인 B-2-19: 동시 상한 40체 체크
+          if (monsters.length < 40) {
+            _spawnMonster();
+          }
         }
       }
     }
@@ -887,15 +934,19 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
             if (m.castleAttackTimer >= attackInterval) {
               m.castleAttackTimer = 0.0;
-              castleHp = max(0, castleHp - damage);
-              castleFlashTimer = 0.2; // D-3-1: 성 피격 점멸
+              if (!_castleBarrierActive) { // 리디자인 B-2-20: 바리어 무적
+                castleHp = max(0, castleHp - damage);
+                castleFlashTimer = 0.2; // D-3-1: 성 피격 점멸
+              }
             }
             continue; // 성 공격 중에는 이동 안 함
           }
 
-          // 일반 몬스터: 1데미지 후 소멸
-          castleHp = max(0, castleHp - 1);
-          castleFlashTimer = 0.2; // D-3-1: 성 피격 점멸
+          // 일반 몬스터: 1데미지 후 소멸 (바리어 활성 시 무적)
+          if (!_castleBarrierActive) { // 리디자인 B-2-20
+            castleHp = max(0, castleHp - 1);
+            castleFlashTimer = 0.2; // D-3-1: 성 피격 점멸
+          }
           monsters.removeAt(i);
           escapedMonsters++;
           continue;
@@ -1058,14 +1109,114 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
   // 리디자인 B-2-10: 레벨업 체크 및 처리
   void _checkLevelUp() {
-    while (playerXp >= _xpToNextLevel()) {
+    if (playerXp >= _xpToNextLevel()) {
       playerXp -= _xpToNextLevel();
       playerCharLevel++;
       _pendingLevelUp = true;
-      // TODO B-2-11: 버프 카드 UI 트리거 (Designer 담당)
-      // 현재는 레벨업 플래그만 설정, 게임은 계속 진행
+      // 리디자인 B-2-11: 레벨업 바프 카드 선택 화면으로 전환
+      _generateBuffOptions();
+      // 리디자인 B-2-12: 레벨업 시 XP 자석 효과 발동 (1초)
+      _xpMagnetTimer = _xpMagnetDuration;
+      gameState = GameState.levelUp;
     }
   }
+
+  // 리디자인 B-2-11: 바프 선택지 3장 생성 (P-2-1 추첨 로직)
+  void _generateBuffOptions() {
+    final allBuffs = BuffType.values.toList();
+    // 최대 중복 제한에 걸린 바프 제외
+    final maxCounts = {
+      BuffType.attackUp: 5,
+      BuffType.attackSpdUp: 5,
+      BuffType.moveSpeedUp: 3,
+      BuffType.rangeUp: 3,
+      BuffType.castleRepair: 999,
+      BuffType.towerPowerUp: 5,
+      BuffType.xpMagnetUp: 3,
+      BuffType.castleBarrier: 999,
+    };
+    final currentCounts = {
+      BuffType.attackUp: _atkUpCount,
+      BuffType.attackSpdUp: _spdUpCount,
+      BuffType.moveSpeedUp: _moveUpCount,
+      BuffType.rangeUp: _rangeUpCount,
+      BuffType.castleRepair: 0,
+      BuffType.towerPowerUp: _towerUpCount,
+      BuffType.xpMagnetUp: _magnetCount,
+      BuffType.castleBarrier: 0,
+    };
+
+    // 중복 가능한 바프만 후보에 포함
+    final candidates = allBuffs.where((b) =>
+        currentCounts[b]! < maxCounts[b]!
+    ).toList();
+
+    // 후보가 3개 미만이면 무제한 바프를 강제 추가
+    if (candidates.length < 3) {
+      if (!candidates.contains(BuffType.castleRepair)) {
+        candidates.add(BuffType.castleRepair);
+      }
+      if (candidates.length < 3 && !candidates.contains(BuffType.castleBarrier)) {
+        candidates.add(BuffType.castleBarrier);
+      }
+    }
+
+    // 직전 선택 바프를 50% 확률로 제외 (연속 방지)
+    List<BuffType> weighted = [];
+    for (final b in candidates) {
+      weighted.add(b);
+      if (b != _lastChosenBuff) weighted.add(b); // 2배 가중치
+    }
+    weighted.shuffle(_random);
+
+    // 중복 없이 3개 선택
+    final chosen = <BuffType>[];
+    for (final b in weighted) {
+      if (!chosen.contains(b)) chosen.add(b);
+      if (chosen.length >= 3) break;
+    }
+    // 혹시 3개 미만이면 castleRepair로 채움
+    while (chosen.length < 3) {
+      chosen.add(BuffType.castleRepair);
+    }
+    _buffOptions = chosen;
+  }
+
+  // 리디자인 B-2-11: 바프 선택 적용
+  void _applyBuff(BuffType buff) {
+    switch (buff) {
+      case BuffType.attackUp:
+        if (_atkUpCount < 5) _atkUpCount++;
+      case BuffType.attackSpdUp:
+        if (_spdUpCount < 5) _spdUpCount++;
+      case BuffType.moveSpeedUp:
+        if (_moveUpCount < 3) _moveUpCount++;
+      case BuffType.rangeUp:
+        if (_rangeUpCount < 3) _rangeUpCount++;
+      case BuffType.castleRepair:
+        castleHp = min(castleMaxHp, castleHp + 20);
+      case BuffType.towerPowerUp:
+        if (_towerUpCount < 5) _towerUpCount++;
+      case BuffType.xpMagnetUp:
+        if (_magnetCount < 3) _magnetCount++;
+      case BuffType.castleBarrier:
+        _castleBarrierActive = true;
+        _castleBarrierTimer = _castleBarrierDuration;
+    }
+    _lastChosenBuff = buff;
+    _buffOptions = [];
+    _pendingLevelUp = false;
+    gameState = GameState.playing;
+  }
+
+  // 리디자인 B-2-11: 바프 적용 후 캐릭터 스탯 가져오기 (공격력 보정)
+  double get _buffedMainAtkMultiplier => pow(1.15, _atkUpCount).toDouble();
+  double get _buffedMainAtkIntervalMultiplier => pow(0.90, _spdUpCount).toDouble();
+  double get _buffedMoveSpeed => _mainCharSpeed * pow(1.20, _moveUpCount).toDouble();
+  double get _buffedRangeMultiplier => pow(1.15, _rangeUpCount).toDouble();
+  double get _buffedTowerAtkMultiplier => pow(1.10, _towerUpCount).toDouble();
+  // 리디자인 B-2-12: XP 자석 반경 (기본 20px + 스택당 +15px)
+  double get _xpCollectRadius => 20.0 + 15.0 * _magnetCount;
 
   // 리디자인 B-2-14: 필살기 발동 (스킬 게이지 100% 시 전체 화면 999 데미지)
   void _fireUltimateSkill() {
@@ -1142,39 +1293,45 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         final target = unit.targetMonster!;
         final distance = (target.pos - unit.pos).length;
 
+        // 리디자인 B-2-11: 바프 배율 계산 (메인=공격/사거리 바프, 타워=타워강화 바프)
+        final double atkMult = unit.isTower
+            ? _buffedTowerAtkMultiplier
+            : _buffedMainAtkMultiplier;
+        final double rangeMult = unit.isTower ? 1.0 : _buffedRangeMultiplier;
+
         // 역할에 따른 행동
         switch (unit.definition.role) {
           case RoleType.tanker:
             // 탱커: 근거리 공격 (1 데미지)
-            _handleMeleeUnit(unit, target, distance, dt, 1.0, moveSpeedBuff);
+            _handleMeleeUnit(unit, target, distance, dt, 1.0 * atkMult, moveSpeedBuff);
             break;
 
           case RoleType.physicalDealer:
             // 물리딜러: 클래스에 따라 다른 공격 방식 (증가된 사거리 적용)
             if (unit.definition.classType == ClassType.archer) {
               // 궁수: 3발 동시 발사
-              _handleArcherUnit(unit, target, distance, dt, 1.0, physicalDealerRange, moveSpeedBuff);
+              _handleArcherUnit(unit, target, distance, dt, 1.0 * atkMult, physicalDealerRange * rangeMult, moveSpeedBuff);
             } else if (unit.definition.classType == ClassType.gunslinger) {
               // 총잡이: 연속 발사 (두두두)
-              _handleGunslingerUnit(unit, target, distance, dt, 1.0, physicalDealerRange, moveSpeedBuff);
+              _handleGunslingerUnit(unit, target, distance, dt, 1.0 * atkMult, physicalDealerRange * rangeMult, moveSpeedBuff);
             } else {
-              _handleRangedUnit(unit, target, distance, dt, 1.0, physicalDealerRange, 3.0, moveSpeedBuff);
+              _handleRangedUnit(unit, target, distance, dt, 1.0 * atkMult, physicalDealerRange * rangeMult, 3.0, moveSpeedBuff);
             }
             break;
 
           case RoleType.magicDealer:
             // 마법딜러: 스플래시 데미지
-            _handleMagicUnit(unit, target, distance, dt, 1.0, rangedRange * 1.5, moveSpeedBuff);
+            _handleMagicUnit(unit, target, distance, dt, 1.0 * atkMult, rangedRange * 1.5 * rangeMult, moveSpeedBuff);
             break;
 
           case RoleType.priest:
             // 성직자: 원거리 공격 (1 데미지, 증가된 사거리, 느린 공격속도)
-            _handleRangedUnit(unit, target, distance, dt, 1.0, priestRange, 1.5, moveSpeedBuff);
+            _handleRangedUnit(unit, target, distance, dt, 1.0 * atkMult, priestRange * rangeMult, 1.5, moveSpeedBuff);
             break;
 
           case RoleType.utility:
             // 유틸리티: 원거리 투사물 공격
-            _handleRangedUnit(unit, target, distance, dt, 1.0, rangedRange, 2.0, moveSpeedBuff);
+            _handleRangedUnit(unit, target, distance, dt, 1.0 * atkMult, rangedRange * rangeMult, 2.0, moveSpeedBuff);
             break;
         }
 
@@ -1203,8 +1360,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     if (dist <= _stickDeadzone) return;
 
     // 정규화된 방향으로 150px/s 이동
-    unit.pos.x += (dx / dist) * _mainCharSpeed * dt;
-    unit.pos.y += (dy / dist) * _mainCharSpeed * dt;
+    unit.pos.x += (dx / dist) * _buffedMoveSpeed * dt; // 리디자인 B-2-11: 이동속도 바프 적용
+    unit.pos.y += (dy / dist) * _buffedMoveSpeed * dt;
 
     // 화면 내 클램프
     unit.pos.x = unit.pos.x.clamp(characterUnitRadius, size.x - characterUnitRadius);
@@ -1330,7 +1487,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     final mainUnit = _mainCharAlive
         ? characterUnits.where((u) => !u.isTower).firstOrNull
         : null;
-    const double collectRadius = 20.0; // 회수 반경 20px
+    final double collectRadius = _xpCollectRadius; // 리디자인 B-2-12: 자석 반경 포함
 
     for (int i = xpGems.length - 1; i >= 0; i--) {
       final gem = xpGems[i];
@@ -1370,6 +1527,19 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         playerGold += drop.goldValue;
         goldDrops.removeAt(i);
       }
+    }
+  }
+
+  // 리디자인 B-2-12: 레벨업 시 전체 XP 젬을 메인 캐릭터 쪽으로 끌어당김
+  void _attractAllXpGems() {
+    final mainUnit = _mainCharAlive
+        ? characterUnits.where((u) => !u.isTower).firstOrNull
+        : null;
+    if (mainUnit == null) return;
+    // 모든 젬을 즉시 수집
+    for (int i = xpGems.length - 1; i >= 0; i--) {
+      playerXp += xpGems[i].xpValue;
+      xpGems.removeAt(i);
     }
   }
 
@@ -1835,6 +2005,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         break;
       case GameState.paused:
         _handleTapInPaused(pos);
+        break;
+      case GameState.levelUp:
+        _handleTapInLevelUp(pos);
         break;
       case GameState.roundClear:
         // 라운드 클리어 중에는 탭 무시 (자동 진행)
@@ -2435,6 +2608,18 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   }
 
   // 일시정지 화면: "재개 / 라운드 선택 / 재시작"
+  // 리디자인 B-2-11: 레벨업 화면 탭 처리 - 바프 카드 선택
+  // 카드 위치는 Designer(_renderLevelUpUI)와 맞춰야 함
+  // 임시: 화면 1/3 영역 3분할로 탭 감지
+  void _handleTapInLevelUp(Vector2 tapPos) {
+    if (_buffOptions.isEmpty) return;
+    final double cardW = size.x / 3;
+    final int idx = (tapPos.x / cardW).floor().clamp(0, 2);
+    if (idx < _buffOptions.length) {
+      _applyBuff(_buffOptions[idx]);
+    }
+  }
+
   void _handleTapInPaused(Vector2 tapPos) {
     final offset = Offset(tapPos.x, tapPos.y);
 
@@ -2729,7 +2914,113 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       _renderReviveCountdown(canvas, _respawnTimer);
     }
 
+    // 리디자인 B-2-11: 레벨업 화면 오버레이 (Designer D-2-1 담당)
+    if (gameState == GameState.levelUp && _buffOptions.isNotEmpty) {
+      _renderLevelUpUI(canvas);
+    }
+
     _renderGameStateOverlay(canvas);
+  }
+
+  // 리디자인 B-2-11: 레벨업 바프 카드 UI (Designer D-2-1에서 구체적 구현)
+  // 임시: 반투명 오버레이 + 바프 이름 텍스트 3장
+  void _renderLevelUpUI(Canvas canvas) {
+    // 반투명 배경
+    final bgPaint = Paint()..color = const Color(0xCC000000);
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y), bgPaint);
+
+    // LEVEL UP 텍스트
+    _drawText(
+      canvas,
+      'LEVEL UP! Lv.$playerCharLevel',
+      Offset(size.x / 2, size.y * 0.2),
+      fontSize: 24,
+      color: const Color(0xFFFFD700),
+    );
+
+    // 바프 카드 3장 (가로 3분할)
+    const double cardW = 110.0;
+    const double cardH = 160.0;
+    final double startX = (size.x - cardW * 3 - 16 * 2) / 2;
+    final double cardY = size.y * 0.35;
+
+    for (int i = 0; i < _buffOptions.length && i < 3; i++) {
+      final buff = _buffOptions[i];
+      final double cx = startX + i * (cardW + 16);
+      final cardRect = Rect.fromLTWH(cx, cardY, cardW, cardH);
+
+      // 카드 배경
+      final cardPaint = Paint()..color = const Color(0xFF2A3A5A);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(cardRect, const Radius.circular(12)),
+        cardPaint,
+      );
+
+      // 카드 테두리
+      final borderPaint = Paint()
+        ..color = const Color(0xFF5A8AFF)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(cardRect, const Radius.circular(12)),
+        borderPaint,
+      );
+
+      // 바프 이름
+      _drawText(
+        canvas,
+        _buffTypeName(buff),
+        Offset(cx + cardW / 2, cardY + 20),
+        fontSize: 12,
+        color: const Color(0xFFFFFFFF),
+      );
+
+      // 바프 설명
+      _drawText(
+        canvas,
+        _buffTypeDesc(buff),
+        Offset(cx + cardW / 2, cardY + 60),
+        fontSize: 10,
+        color: const Color(0xFFBBCCFF),
+      );
+    }
+
+    // 탭 안내
+    _drawText(
+      canvas,
+      'Tap to select',
+      Offset(size.x / 2, size.y * 0.8),
+      fontSize: 14,
+      color: const Color(0x88FFFFFF),
+    );
+  }
+
+  // 바프 이름 표시
+  String _buffTypeName(BuffType buff) {
+    switch (buff) {
+      case BuffType.attackUp: return 'ATK UP';
+      case BuffType.attackSpdUp: return 'SPD UP';
+      case BuffType.moveSpeedUp: return 'MOVE UP';
+      case BuffType.rangeUp: return 'RANGE UP';
+      case BuffType.castleRepair: return 'REPAIR';
+      case BuffType.towerPowerUp: return 'TOWER UP';
+      case BuffType.xpMagnetUp: return 'MAGNET';
+      case BuffType.castleBarrier: return 'BARRIER';
+    }
+  }
+
+  // 바프 설명 표시
+  String _buffTypeDesc(BuffType buff) {
+    switch (buff) {
+      case BuffType.attackUp: return 'ATK +15%\n(max 5)';
+      case BuffType.attackSpdUp: return 'Interval -10%\n(max 5)';
+      case BuffType.moveSpeedUp: return 'Speed +20%\n(max 3)';
+      case BuffType.rangeUp: return 'Range +15%\n(max 3)';
+      case BuffType.castleRepair: return 'Castle HP +20';
+      case BuffType.towerPowerUp: return 'Tower ATK +10%\n(max 5)';
+      case BuffType.xpMagnetUp: return 'XP Radius +15px\n(max 3)';
+      case BuffType.castleBarrier: return '10s Barrier';
+    }
   }
 
   void _renderBackground(Canvas canvas) {
