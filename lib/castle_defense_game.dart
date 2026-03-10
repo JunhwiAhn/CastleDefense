@@ -21,6 +21,7 @@ enum GameState {
   paused, // 일시정지
   levelUp, // 리디자인 B-2-11: 레벨업 바프 카드 선택 (게임 일시정지)
   roundClear, // 라운드 클리어 (잠깐 멈춤)
+  augmentSelect, // 증강 선택 (라운드 2/4/5 클리어 후)
   shopOpen, // 리디자인 B-2-16: 스테이지 클리어 후 상점 화면
   result, // 결과 화면 (클리어 or 실패)
 }
@@ -32,6 +33,69 @@ enum ShopItemType {
   towerPowerUp,     // 전체 타워 공격력 +5% (30G, 최대 10회)
   mainCharHpUp,     // 메인 캐릭터 최대 HP +10 (20G, 최대 5회)
 }
+
+// 증강 시스템 (augment-system.md 참조)
+enum AugmentTier { common, rare, legendary }
+enum AugmentCategory { main, tower, castle, utility, economy, elemental, special, synergy }
+
+class Augment {
+  final String id;
+  final String nameJp;
+  final AugmentTier tier;
+  final AugmentCategory category;
+  final String description;
+  final bool carryOverToNextStage;
+
+  const Augment({
+    required this.id,
+    required this.nameJp,
+    required this.tier,
+    required this.category,
+    required this.description,
+    this.carryOverToNextStage = false,
+  });
+}
+
+// 전체 34종 증강 정의
+const List<Augment> kAllAugments = [
+  // === Common (14종) ===
+  Augment(id:'C-01', nameJp:'鋼の意志', tier:AugmentTier.common, category:AugmentCategory.main, description:'메인 최대 HP +15'),
+  Augment(id:'C-02', nameJp:'迅速の加護', tier:AugmentTier.common, category:AugmentCategory.main, description:'메인 이동속도 +25%'),
+  Augment(id:'C-03', nameJp:'鋭利な刃', tier:AugmentTier.common, category:AugmentCategory.main, description:'메인 공격력 +20%'),
+  Augment(id:'C-04', nameJp:'連射の才', tier:AugmentTier.common, category:AugmentCategory.main, description:'메인 공격속도 +20%'),
+  Augment(id:'C-05', nameJp:'城壁修復', tier:AugmentTier.common, category:AugmentCategory.castle, description:'성 최대 HP +25 및 즉시 25 회복'),
+  Augment(id:'C-06', nameJp:'タワー油断', tier:AugmentTier.common, category:AugmentCategory.tower, description:'전 타워 공격속도 +20%'),
+  Augment(id:'C-07', nameJp:'巨大磁石', tier:AugmentTier.common, category:AugmentCategory.utility, description:'XP 회수 반경 +30px'),
+  Augment(id:'C-08', nameJp:'速成復活', tier:AugmentTier.common, category:AugmentCategory.utility, description:'복활 카운트다운 -2초'),
+  Augment(id:'C-09', nameJp:'金の手', tier:AugmentTier.common, category:AugmentCategory.economy, description:'골드 획득량 +30%'),
+  Augment(id:'C-10', nameJp:'余波', tier:AugmentTier.common, category:AugmentCategory.main, description:'메인 격파 시 주위 30px 스플래시'),
+  Augment(id:'C-11', nameJp:'守護の炎', tier:AugmentTier.common, category:AugmentCategory.castle, description:'라운드 시작 시 성 HP +5 회복'),
+  Augment(id:'C-12', nameJp:'タワー補給', tier:AugmentTier.common, category:AugmentCategory.tower, description:'전 타워 사거리 +20%'),
+  Augment(id:'C-13', nameJp:'疾風迅雷', tier:AugmentTier.common, category:AugmentCategory.utility, description:'복활 무적시간 +2초'),
+  Augment(id:'C-14', nameJp:'属性目覚め', tier:AugmentTier.common, category:AugmentCategory.elemental, description:'속성 데미지 보너스 +10%'),
+  // === Rare (12종) ===
+  Augment(id:'R-01', nameJp:'連鎖弾', tier:AugmentTier.rare, category:AugmentCategory.main, description:'투사물 착탄 후 최근 적에게 60% 연쇄'),
+  Augment(id:'R-02', nameJp:'吸血衝動', tier:AugmentTier.rare, category:AugmentCategory.main, description:'공격 데미지의 20%를 HP로 흡수'),
+  Augment(id:'R-03', nameJp:'爆発弾頭', tier:AugmentTier.rare, category:AugmentCategory.tower, description:'투사물 착탄 시 35px 범위 50% 스플래시'),
+  Augment(id:'R-04', nameJp:'城の怒り', tier:AugmentTier.rare, category:AugmentCategory.castle, description:'성 피격 시 타워 공격력 +15% (5초, 최대3스택)'),
+  Augment(id:'R-05', nameJp:'超集中砲火', tier:AugmentTier.rare, category:AugmentCategory.tower, description:'타워 집중 공격 시 데미지 +30%'),
+  Augment(id:'R-06', nameJp:'緊急発動', tier:AugmentTier.rare, category:AugmentCategory.special, description:'스킬 게이지 축적량 +50%'),
+  Augment(id:'R-07', nameJp:'元素爆発', tier:AugmentTier.rare, category:AugmentCategory.elemental, description:'통상 공격에 속성 상태이상 15% 발동'),
+  Augment(id:'R-08', nameJp:'鉄壁の城', tier:AugmentTier.rare, category:AugmentCategory.castle, description:'성 접촉 데미지 -30%'),
+  Augment(id:'R-09', nameJp:'宝の山', tier:AugmentTier.rare, category:AugmentCategory.utility, description:'XP젬/골드 소멸시간 +15초'),
+  Augment(id:'R-10', nameJp:'二段蓄積', tier:AugmentTier.rare, category:AugmentCategory.utility, description:'레벨업 XP 자석 2연속 발동'),
+  Augment(id:'R-11', nameJp:'タワー連携', tier:AugmentTier.rare, category:AugmentCategory.tower, description:'동일 타겟 2연속 공격 후 3회째 자동 크리티컬'),
+  Augment(id:'R-12', nameJp:'不屈の城', tier:AugmentTier.rare, category:AugmentCategory.castle, description:'성 HP 50이하 시 1회 10초 바리어 발동'),
+  // === Legendary (8종) ===
+  Augment(id:'L-01', nameJp:'不死の誓い', tier:AugmentTier.legendary, category:AugmentCategory.main, description:'HP0 시 1회 HP1 생존 + 3초 무적 (스테이지 1회)', carryOverToNextStage:true),
+  Augment(id:'L-02', nameJp:'王の咆哮', tier:AugmentTier.legendary, category:AugmentCategory.special, description:'필살기 발동 시 10초간 타워 공격력+60% 공속+40%', carryOverToNextStage:true),
+  Augment(id:'L-03', nameJp:'大地の守護者', tier:AugmentTier.legendary, category:AugmentCategory.castle, description:'성 HP 30%이하 시 60초 바리어 (성 데미지 50%감소) 1회'),
+  Augment(id:'L-04', nameJp:'時の加速', tier:AugmentTier.legendary, category:AugmentCategory.utility, description:'라운드 인터벌 중 이동속도 400% + XP 자석 상시 발동'),
+  Augment(id:'L-05', nameJp:'元素の嵐', tier:AugmentTier.legendary, category:AugmentCategory.elemental, description:'3속성 이상 시 전 공격에 랜덤 속성 상태이상 30%'),
+  Augment(id:'L-06', nameJp:'究極砲台', tier:AugmentTier.legendary, category:AugmentCategory.tower, description:'타워 투사물 수 +1 (타워 1기씩 순서대로 적용)', carryOverToNextStage:true),
+  Augment(id:'L-07', nameJp:'魂の連鎖', tier:AugmentTier.legendary, category:AugmentCategory.synergy, description:'메인이 적 격파 시 전 타워 다음 공격이 크리티컬'),
+  Augment(id:'L-08', nameJp:'永遠の契約', tier:AugmentTier.legendary, category:AugmentCategory.synergy, description:'같은 효과 바프 2회 이상 취득 시 +1스택 추가'),
+];
 
 // 리디자인 B-2-11: 바프 타입 (P-2-1 기준 8종)
 enum BuffType {
@@ -513,6 +577,18 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   ElementType _mainCharElement = ElementType.none;
   int _elementMasteryCount = 0; // 속성 마스터리 스택 (최대 3)
 
+  // 증강 시스템 (augment-system.md 참조)
+  List<Augment> activeAugments = []; // 현재 스테이지 취득 증강
+  List<Augment> _augmentOptions = []; // 현재 선택지 3개
+  final Set<String> _acquiredAugmentIds = {}; // 취득한 증강 ID 집합 (중복 방지)
+  // 증강별 효과 상태
+  bool _augmentL01Used = false;   // L-01 불사의 서약: 1회 사용 여부
+  bool _augmentL03Used = false;   // L-03 대지의 수호자: 1회 사용 여부
+  bool _augmentR12Used = false;   // R-12 불굴의 성: 1회 발동 여부
+  int _augmentR04Stacks = 0;      // R-04 성의 분노: 현재 스택 수
+  double _augmentR04Timer = 0.0;  // R-04 타이머
+  bool _augmentL07NextCrit = false; // L-07 영혼의 연쇄: 다음 타워 공격 크리티컬 여부
+
   // 레벨업 바프 선택지 (3장)
   List<BuffType> _buffOptions = [];
   BuffType? _lastChosenBuff; // 직전 선택 바프 (50% 확률 감소용)
@@ -724,6 +800,17 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     // 속성 시스템: 스테이지 시작 시 속성 리셋 (바프로 재부여)
     _mainCharElement = ElementType.none;
     _elementMasteryCount = 0;
+    // 증강 시스템: 스테이지 시작 시 비전설 증강 리셋, 전설은 carryOver 유지
+    activeAugments = activeAugments.where((a) => a.carryOverToNextStage).toList();
+    _acquiredAugmentIds.clear();
+    for (final a in activeAugments) { _acquiredAugmentIds.add(a.id); }
+    _augmentOptions = [];
+    _augmentL01Used = false;
+    _augmentL03Used = false;
+    _augmentR12Used = false;
+    _augmentR04Stacks = 0;
+    _augmentR04Timer = 0.0;
+    _augmentL07NextCrit = false;
 
     _loadRound(1); // 첫 번째 라운드 로딩
   }
@@ -805,6 +892,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         return;
       case GameState.roundClear:
         _updateRoundClear(dt);
+        return;
+      case GameState.augmentSelect:
+        // 증강 선택 중 - 업데이트 없음 (탭 입력 대기)
         return;
       case GameState.shopOpen:
         // 리디자인 B-2-16: 상점 화면 - 업데이트 없음
@@ -911,6 +1001,15 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     _roundClearTimer += dt;
     if (_roundClearTimer >= _roundClearDuration) {
       _roundClearTimer = 0.0;
+      // 증강 시스템: 라운드 2/4/5 클리어 후 증강 선택 화면
+      if (currentRound == 2 || currentRound == 4 || currentRound == 5) {
+        _triggerAugmentSelection();
+        if (gameState == GameState.augmentSelect) return; // 증강 선택 대기
+      }
+      // C-11 증강: 라운드 시작 시 성 HP +5
+      if (_hasAugment('C-11')) {
+        castleHp = min(castleMaxHp, castleHp + 5);
+      }
       _startNextRound();
     }
   }
@@ -1204,14 +1303,16 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         : mType == MonsterType.miniBoss ? 10 : 1;
     xpGems.add(_XpGem(pos: dropPos.clone(), xpValue: xpValue));
 
-    // 리디자인 B-2-15: 골드 드롭
-    final goldValue = mType == MonsterType.boss ? 20
+    // 리디자인 B-2-15: 골드 드롭 (C-09 증강: +30% 골드)
+    final int baseGold = mType == MonsterType.boss ? 20
         : mType == MonsterType.miniBoss ? 5 : 1;
+    final int goldValue = (_augmentGoldMultiplier * baseGold).round();
     goldDrops.add(_GoldDrop(pos: dropPos, goldValue: goldValue));
 
-    // 리디자인 B-2-13: 스킬 게이지 충전
-    final gaugeIncrease = mType == MonsterType.boss ? 50.0
+    // 리디자인 B-2-13: 스킬 게이지 충전 (R-06 증강: +50% 게이지)
+    final double baseGauge = mType == MonsterType.boss ? 50.0
         : mType == MonsterType.miniBoss ? 15.0 : 3.0;
+    final double gaugeIncrease = baseGauge * _augmentSkillGaugeMultiplier;
     skillGauge = min(100.0, skillGauge + gaugeIncrease);
     if (skillGauge >= 100.0) skillReady = true;
   }
@@ -2221,6 +2322,143 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     gameState = GameState.result;
   }
 
+  // ===== 증강 시스템 (augment-system.md) =====
+
+  // 라운드 클리어 시 증강 선택 트리거 (라운드 2/4/5)
+  void _triggerAugmentSelection() {
+    final tierProbs = {
+      2: {AugmentTier.common: 0.60, AugmentTier.rare: 0.35, AugmentTier.legendary: 0.05},
+      4: {AugmentTier.common: 0.25, AugmentTier.rare: 0.50, AugmentTier.legendary: 0.25},
+      5: {AugmentTier.common: 0.10, AugmentTier.rare: 0.40, AugmentTier.legendary: 0.50},
+    };
+    final probs = tierProbs[currentRound];
+    if (probs == null) return; // 라운드 2/4/5에서만 발동
+
+    _augmentOptions = _generateAugmentChoices(probs);
+    if (_augmentOptions.isNotEmpty) {
+      gameState = GameState.augmentSelect;
+    }
+  }
+
+  // 3개의 증강 선택지 생성 (취득 ID 제외, 티어 확률 기반)
+  List<Augment> _generateAugmentChoices(Map<AugmentTier, double> tierProbs) {
+    // 티어별 후보 풀 (이미 취득한 증강 제외)
+    final Map<AugmentTier, List<Augment>> pool = {
+      AugmentTier.common: kAllAugments.where((a) =>
+          a.tier == AugmentTier.common && !_acquiredAugmentIds.contains(a.id)).toList(),
+      AugmentTier.rare: kAllAugments.where((a) =>
+          a.tier == AugmentTier.rare && !_acquiredAugmentIds.contains(a.id)).toList(),
+      AugmentTier.legendary: kAllAugments.where((a) =>
+          a.tier == AugmentTier.legendary && !_acquiredAugmentIds.contains(a.id)).toList(),
+    };
+
+    final chosen = <Augment>[];
+    int attempts = 0;
+    while (chosen.length < 3 && attempts < 50) {
+      attempts++;
+      // 랜덤 티어 추첨
+      final roll = _random.nextDouble();
+      AugmentTier tier;
+      if (roll < (tierProbs[AugmentTier.legendary] ?? 0)) {
+        tier = AugmentTier.legendary;
+      } else if (roll < (tierProbs[AugmentTier.legendary] ?? 0) + (tierProbs[AugmentTier.rare] ?? 0)) {
+        tier = AugmentTier.rare;
+      } else {
+        tier = AugmentTier.common;
+      }
+
+      final candidates = pool[tier]!;
+      if (candidates.isEmpty) continue;
+
+      // 중복 없는 선택
+      final aug = candidates[_random.nextInt(candidates.length)];
+      if (!chosen.contains(aug)) {
+        chosen.add(aug);
+      }
+    }
+
+    // 최소 1개 보장 (풀이 빈 경우)
+    if (chosen.isEmpty) {
+      final fallback = kAllAugments.where((a) => !_acquiredAugmentIds.contains(a.id)).toList();
+      if (fallback.isNotEmpty) chosen.add(fallback[_random.nextInt(fallback.length)]);
+    }
+    return chosen;
+  }
+
+  // 증강 선택 적용
+  void _applyAugment(Augment augment) {
+    activeAugments.add(augment);
+    _acquiredAugmentIds.add(augment.id);
+    _augmentOptions = [];
+
+    switch (augment.id) {
+      // Common
+      case 'C-01': // 메인 최대 HP +15
+        _shopMainCharHpCount = ((_shopMainCharHpCount * 10 + 15) / 10).ceil().clamp(0, 99);
+        break;
+      case 'C-02': // 메인 이동속도 +25%
+        _moveUpCount = (_moveUpCount + 1).clamp(0, 99); // 이동속도 버프와 별도로 처리 (근사치)
+        break;
+      case 'C-03': // 메인 공격력 +20%
+        _atkUpCount = (_atkUpCount + 1).clamp(0, 99);
+        break;
+      case 'C-04': // 메인 공격속도 +20%
+        _spdUpCount = (_spdUpCount + 1).clamp(0, 99);
+        break;
+      case 'C-05': // 성 최대 HP +25 + 즉시 회복
+        _shopCastleMaxHpCount = ((_shopCastleMaxHpCount * 20 + 25) / 20).ceil().clamp(0, 99);
+        castleHp = min(castleMaxHp, castleHp + 25);
+        break;
+      case 'C-06': // 전 타워 공격속도 +20% (속도 버프 근사)
+        _towerUpCount = (_towerUpCount + 1).clamp(0, 99);
+        break;
+      case 'C-07': // XP 회수 반경 +30px
+        _magnetCount = (_magnetCount + 2).clamp(0, 99); // +15px × 2 = +30px 근사
+        break;
+      case 'C-08': // 복활 카운트다운 -2초 (플래그로 처리)
+        // _revivalDuration에서 사용 (별도 처리)
+        break;
+      case 'C-09': // 골드 획득량 +30%
+        // _goldMultiplier에서 사용 (별도 처리)
+        break;
+      case 'C-10': // 격파 시 스플래시 (이미 별도 로직으로 처리)
+        break;
+      case 'C-11': // 라운드 시작 시 성 HP +5 (라운드 로드 시 적용)
+        break;
+      case 'C-12': // 전 타워 사거리 +20%
+        _rangeUpCount = (_rangeUpCount + 1).clamp(0, 99);
+        break;
+      case 'C-13': // 복활 무적 +2초 (플래그)
+        break;
+      case 'C-14': // 속성 마스터리 +10%
+        _elementMasteryCount = (_elementMasteryCount + 1).clamp(0, 10);
+        break;
+      // Rare
+      case 'R-06': // 스킬 게이지 축적량 +50%
+        break; // 게이지 증가 시 배율 적용 (별도 처리)
+      case 'R-12': // 성 HP 50 이하 시 1회 바리어 발동
+        _augmentR12Used = false; // 발동 가능 상태로 리셋
+        break;
+      // Legendary
+      case 'L-01': _augmentL01Used = false; break;
+      case 'L-03': _augmentL03Used = false; break;
+      default: break;
+    }
+
+    // 증강 선택 후 게임 재개
+    gameState = GameState.playing;
+  }
+
+  // 증강 보유 여부 확인 (ID로 조회)
+  bool _hasAugment(String id) => _acquiredAugmentIds.contains(id);
+
+  // 증강 효과 배율 계산 (복수 증강 반영)
+  double get _augmentGoldMultiplier =>
+      _hasAugment('C-09') ? 1.3 : 1.0; // 골드 획득량 +30%
+
+  double get _augmentSkillGaugeMultiplier =>
+      _hasAugment('R-06') ? 1.5 : 1.0; // 스킬 게이지 +50%
+
   // 상점 아이템 가격 조회
   int shopItemPrice(ShopItemType item) {
     switch (item) {
@@ -2285,6 +2523,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         break;
       case GameState.shopOpen:
         _handleTapInShop(pos);
+        break;
+      case GameState.augmentSelect:
+        _handleTapInAugmentSelect(pos);
         break;
       case GameState.roundClear:
         // 라운드 클리어 중에는 탭 무시 (자동 진행)
@@ -2888,6 +3129,22 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   // 리디자인 B-2-16: 상점 화면 탭 처리
   // 상점 UI 버튼 위치는 Designer(D-2-2) 구현과 맞춰야 함
   // 임시: 화면 하단 "계속" 영역을 탭하면 상점 종료
+  // 증강 선택 화면 탭 처리 - 화면 1/3 영역 분할
+  void _handleTapInAugmentSelect(Vector2 tapPos) {
+    if (_augmentOptions.isEmpty) {
+      // 선택지 없으면 게임 재개
+      if (_hasAugment('C-11')) castleHp = min(castleMaxHp, castleHp + 5);
+      _startNextRound();
+      return;
+    }
+    final double cardW = size.x / 3;
+    final int idx = (tapPos.x / cardW).floor().clamp(0, _augmentOptions.length - 1);
+    _applyAugment(_augmentOptions[idx]);
+    // 증강 선택 후 라운드 시작
+    if (_hasAugment('C-11')) castleHp = min(castleMaxHp, castleHp + 5);
+    _startNextRound();
+  }
+
   void _handleTapInShop(Vector2 tapPos) {
     // 화면 하단 20% 탭 = 상점 나가기 (계속 버튼 임시 위치)
     if (tapPos.y > size.y * 0.8) {
@@ -4455,11 +4712,65 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       _renderRoundClearOverlay(canvas);
     } else if (gameState == GameState.paused) {
       _renderPausedOverlay(canvas);
+    } else if (gameState == GameState.augmentSelect) {
+      _renderAugmentSelectionUI(canvas); // 증강 선택 화면
     } else if (gameState == GameState.shopOpen) {
       _renderShopOverlay(canvas); // 리디자인 B-2-16: 상점 화면
     } else if (gameState == GameState.result) {
       _renderResultOverlay(canvas);
     }
+  }
+
+  // 증강 선택 UI (임시 플레이스홀더 - Designer에서 구체화)
+  void _renderAugmentSelectionUI(Canvas canvas) {
+    final bgPaint = Paint()..color = const Color(0xEE0A0A1A);
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y), bgPaint);
+
+    _drawCenteredText(canvas, '⚡ 증강 선택 ⚡', Offset(size.x / 2, size.y * 0.08),
+        fontSize: 20, color: const Color(0xFFFFD700));
+    _drawCenteredText(canvas, 'Round $currentRound 클리어!', Offset(size.x / 2, size.y * 0.15),
+        fontSize: 14, color: const Color(0xFFCCCCCC));
+
+    if (_augmentOptions.isEmpty) {
+      _drawCenteredText(canvas, '증강 없음', Offset(size.x / 2, size.y / 2),
+          fontSize: 16, color: const Color(0xFF888888));
+      return;
+    }
+
+    // 카드 3열 배치
+    final double cardW = size.x / 3 - 8;
+    final double cardH = size.y * 0.5;
+    final double cardY = size.y * 0.22;
+
+    for (int i = 0; i < _augmentOptions.length; i++) {
+      final aug = _augmentOptions[i];
+      final double cardX = i * (size.x / 3) + 4;
+
+      // 티어별 카드 배경색
+      final Color tierColor;
+      switch (aug.tier) {
+        case AugmentTier.legendary: tierColor = const Color(0x88FFD700); break;
+        case AugmentTier.rare: tierColor = const Color(0x882196F3); break;
+        default: tierColor = const Color(0x889E9E9E); break;
+      }
+      final cardPaint = Paint()..color = tierColor;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(Rect.fromLTWH(cardX, cardY, cardW, cardH), const Radius.circular(8)),
+        cardPaint,
+      );
+
+      // 카드 내용
+      final double textX = cardX + cardW / 2;
+      // 티어 레이블
+      final String tierLabel = aug.tier == AugmentTier.legendary ? '伝説'
+          : aug.tier == AugmentTier.rare ? '希少' : '一般';
+      _drawCenteredText(canvas, tierLabel, Offset(textX, cardY + 16), fontSize: 11, color: const Color(0xFFFFFFFF));
+      _drawCenteredText(canvas, aug.nameJp, Offset(textX, cardY + 40), fontSize: 12, color: const Color(0xFFFFFFFF));
+      _drawCenteredText(canvas, aug.description, Offset(textX, cardY + 70), fontSize: 9, color: const Color(0xFFCCCCCC));
+    }
+
+    _drawCenteredText(canvas, '탭으로 선택', Offset(size.x / 2, size.y * 0.85),
+        fontSize: 12, color: const Color(0xFF888888));
   }
 
   // 리디자인 B-2-16: 상점 화면 임시 오버레이 (Designer D-2-2에서 구체화)
