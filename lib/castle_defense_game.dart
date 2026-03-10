@@ -1504,15 +1504,25 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   // 리디자인 B-2-11: 바프 적용 후 캐릭터 스탯 가져오기 (공격력 보정)
   double get _buffedMainAtkMultiplier => pow(1.15, _atkUpCount).toDouble();
   double get _buffedMainAtkIntervalMultiplier => pow(0.90, _spdUpCount).toDouble();
-  double get _buffedMoveSpeed => _mainCharSpeed * pow(1.20, _moveUpCount).toDouble();
+  // L-04: 라운드 인터벌 중 이동속도 400%
+  double get _buffedMoveSpeed {
+    double speed = _mainCharSpeed * pow(1.20, _moveUpCount).toDouble();
+    if (_hasAugment('L-04') && gameState == GameState.roundClear) speed *= 4.0;
+    return speed;
+  }
   double get _buffedRangeMultiplier => pow(1.15, _rangeUpCount).toDouble();
-  // 리디자인 B-2-16: 타워 공격력 배율 (바프 + 상점 영구 강화 합산)
+  // 리디자인 B-2-16: 타워 공격력 배율 (바프 + 상점 영구 강화 + 증강 합산)
   double get _buffedTowerAtkMultiplier =>
-      pow(1.10, _towerUpCount).toDouble() * pow(1.05, _shopTowerPowerCount).toDouble();
+      pow(1.10, _towerUpCount).toDouble() * pow(1.05, _shopTowerPowerCount).toDouble() *
+      pow(1.15, _augmentR04Stacks).toDouble() * // R-04: 성 분노 스택당 +15%
+      (_augmentL02Active ? 1.6 : 1.0); // L-02: 필살기 후 10초 타워 공격력 +60%
   // 리디자인 B-2-12: XP 자석 반경 (기본 20px + 스택당 +15px)
   double get _xpCollectRadius => 20.0 + 15.0 * _magnetCount;
   // 속성 시스템: 속성 마스터리 배율 (기본 x1.0, 스택당 +10%)
   double get _elementMasteryMultiplier => 1.0 + 0.1 * _elementMasteryCount;
+  // C-08: 복활 대기시간 (기본 5초 → 3초), C-13: 복활 무적시간 (기본 2초 → 4초)
+  double get _effectiveRespawnDuration => _hasAugment('C-08') ? 3.0 : 5.0;
+  double get _effectiveInvincibleDuration => _hasAugment('C-13') ? 4.0 : 2.0;
 
   // 리디자인 B-2-14: 필살기 발동 (스킬 게이지 100% 시 전체 화면 999 데미지)
   void _fireUltimateSkill() {
@@ -1534,6 +1544,11 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     }
     skillGauge = 0.0;
     skillReady = false;
+    // L-02: 왕의 포효 - 필살기 발동 후 10초 타워 공격력 +60%
+    if (_hasAugment('L-02')) {
+      _augmentL02Active = true;
+      _augmentL02Timer = 10.0;
+    }
   }
 
   bool _isPointInsideMonster(_Monster m, Vector2 tapPos) {
@@ -1837,6 +1852,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       final dy = drop.pos.y - mainUnit.pos.y;
       if (dx * dx + dy * dy <= collectRadiusSq) {
         playerGold += drop.goldValue;
+        _roundGoldGained += drop.goldValue; // D-1-6: 라운드 골드 추적
         goldDrops.removeAt(i);
       }
     }
@@ -3512,10 +3528,13 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     _renderWeaponInfo(canvas);
     _renderHUD(canvas); // D-1-1: 상단 HUD
 
-    // 플레이 중에만 일시정지 버튼 + 버추얼 스틱 + 스킬 버튼 표시
-    if (gameState == GameState.playing) {
-      _renderPauseButton(canvas);
-      _renderVirtualStick(canvas); // D-1-3: 버추얼 스틱 UI
+    // 플레이/라운드 클리어 중 하단 UI (스틱, 스킬, 골드) 표시
+    if (gameState == GameState.playing || gameState == GameState.roundClear) {
+      if (gameState == GameState.playing) {
+        _renderPauseButton(canvas);
+        _renderVirtualStick(canvas); // D-1-3: 버추얼 스틱 UI
+      }
+      _renderGoldDisplay(canvas);  // D-1-5: 골드 표시 UI
       _renderSkillButton(canvas);  // D-1-4: 스킬 버튼 UI
     }
 
@@ -3995,7 +4014,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         // 일반 몬스터 (Stage1): Goblin 스프라이트
         _renderGoblinSprite(canvas, m, radius);
       } else if (m.type == MonsterType.boss && bossMonsterImageLoaded && bossMonsterImage != null) {
-        // D-4-3: 보스 스프라이트
+        // D-4-3: 보스 스프라이트 (통상 Goblin의 2배 크기 + 발광 오라)
+        _renderBossAura(canvas, center, radius, isBoss: true);
         final srcRect = Rect.fromLTWH(0, 0, bossMonsterImage!.width.toDouble(), bossMonsterImage!.height.toDouble());
         final dstRect = Rect.fromCenter(center: center, width: radius * 2.2, height: radius * 2.2);
         final spritePaint = Paint()
@@ -4003,8 +4023,10 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
               ? const Color(0xFFFF5252)
               : const Color(0xFFFFFFFF);
         canvas.drawImageRect(bossMonsterImage!, srcRect, dstRect, spritePaint);
+        _renderBossCrown(canvas, center, radius, isGold: true);
       } else if (m.type == MonsterType.miniBoss && minibossMonsterImageLoaded && minibossMonsterImage != null) {
-        // D-4-4: 미니보스 스프라이트
+        // D-4-4: 미니보스 스프라이트 (통상의 1.5배 크기 + 주황 오라)
+        _renderBossAura(canvas, center, radius, isBoss: false);
         final srcRect = Rect.fromLTWH(0, 0, minibossMonsterImage!.width.toDouble(), minibossMonsterImage!.height.toDouble());
         final dstRect = Rect.fromCenter(center: center, width: radius * 2.2, height: radius * 2.2);
         final spritePaint = Paint()
@@ -4012,6 +4034,13 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
               ? const Color(0xFFFF5252)
               : const Color(0xFFFFFFFF);
         canvas.drawImageRect(minibossMonsterImage!, srcRect, dstRect, spritePaint);
+        _renderBossCrown(canvas, center, radius, isGold: false);
+      } else if (m.type == MonsterType.boss || m.type == MonsterType.miniBoss) {
+        // D-4-3/D-4-4: 스프라이트 미로드 시 Canvas 폴백 드로잉
+        _renderBossAura(canvas, center, radius, isBoss: m.type == MonsterType.boss);
+        _renderBossMonsterFallback(canvas, center, radius,
+            isBoss: m.type == MonsterType.boss, isDamaged: m.damageFlashTimer > 0);
+        _renderBossCrown(canvas, center, radius, isGold: m.type == MonsterType.boss);
       } else {
         // 폴백: 원형 드로잉
         if (m.damageFlashTimer > 0) {
@@ -4140,6 +4169,116 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       canvas.drawImageRect(goblinImage!, srcRect, dstRect, flashPaint);
     } else {
       canvas.drawImageRect(goblinImage!, srcRect, dstRect, Paint());
+    }
+  }
+
+  // D-4-3: 보스/미니보스 발광 오라 렌더링
+  void _renderBossAura(Canvas canvas, Offset center, double radius, {required bool isBoss}) {
+    // 오라 색상: 보스=빨강, 미니보스=주황
+    final Color auraColor = isBoss ? const Color(0xFFFF3030) : const Color(0xFFFF8C00);
+
+    // 다층 반투명 원형 오라
+    for (int i = 3; i >= 1; i--) {
+      canvas.drawCircle(
+        center,
+        radius + (i * 5.0),
+        Paint()..color = auraColor.withValues(alpha: 0.07 * i),
+      );
+    }
+
+    // 외부 발광 링
+    canvas.drawCircle(
+      center,
+      radius + 5,
+      Paint()
+        ..color = auraColor.withValues(alpha: 0.5)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.8,
+    );
+
+    // 보스 전용: 황금 이중 링
+    if (isBoss) {
+      canvas.drawCircle(
+        center,
+        radius + 10,
+        Paint()
+          ..color = const Color(0xFFFFD700).withValues(alpha: 0.35)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2,
+      );
+    }
+  }
+
+  // D-4-3/D-4-4: 보스/미니보스 왕관 오버레이
+  void _renderBossCrown(Canvas canvas, Offset center, double radius, {required bool isGold}) {
+    final Color crownColor = isGold ? const Color(0xFFFFD700) : const Color(0xFFFF8C00);
+    final double crownBaseY = center.dy - radius - 2;
+    final double halfW = radius * 0.38;
+
+    // 왕관 패스 (5점형 간략 왕관)
+    final path = Path();
+    path.moveTo(center.dx - halfW, crownBaseY);
+    path.lineTo(center.dx - halfW, crownBaseY - radius * 0.28);
+    path.lineTo(center.dx - halfW * 0.4, crownBaseY - radius * 0.15);
+    path.lineTo(center.dx, crownBaseY - radius * 0.4);
+    path.lineTo(center.dx + halfW * 0.4, crownBaseY - radius * 0.15);
+    path.lineTo(center.dx + halfW, crownBaseY - radius * 0.28);
+    path.lineTo(center.dx + halfW, crownBaseY);
+    path.close();
+
+    canvas.drawPath(path, Paint()..color = crownColor.withValues(alpha: 0.85));
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.5)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.8,
+    );
+  }
+
+  // D-4-3/D-4-4: 보스/미니보스 Canvas 폴백 (스프라이트 미로드 시)
+  void _renderBossMonsterFallback(Canvas canvas, Offset center, double radius,
+      {required bool isBoss, required bool isDamaged}) {
+    final Color baseColor = isBoss ? const Color(0xFFCC2200) : const Color(0xFFCC5500);
+    final Color hlColor = isBoss ? const Color(0xFFFF7777) : const Color(0xFFFFAA44);
+
+    // 메인 바디
+    canvas.drawCircle(center, radius, Paint()..color = isDamaged ? const Color(0xFFFF2222) : baseColor);
+
+    // 상단 하이라이트
+    canvas.drawCircle(
+      Offset(center.dx - radius * 0.25, center.dy - radius * 0.25),
+      radius * 0.45,
+      Paint()..color = hlColor.withValues(alpha: 0.55),
+    );
+
+    // 빛나는 눈
+    final eyeR = radius * (isBoss ? 0.16 : 0.13);
+    final eyeOffX = radius * 0.3;
+    final eyeOffY = radius * 0.1;
+    canvas.drawCircle(
+      Offset(center.dx - eyeOffX, center.dy - eyeOffY),
+      eyeR,
+      Paint()..color = const Color(0xFFFFFF00),
+    );
+    canvas.drawCircle(
+      Offset(center.dx + eyeOffX, center.dy - eyeOffY),
+      eyeR,
+      Paint()..color = const Color(0xFFFFFF00),
+    );
+
+    // 보스 전용: 이마 문양 (마름모)
+    if (isBoss) {
+      final markPath = Path();
+      final mx = center.dx;
+      final my = center.dy - radius * 0.55;
+      final ms = radius * 0.12;
+      markPath.moveTo(mx, my - ms);
+      markPath.lineTo(mx + ms, my);
+      markPath.lineTo(mx, my + ms);
+      markPath.lineTo(mx - ms, my);
+      markPath.close();
+      canvas.drawPath(markPath, Paint()..color = const Color(0xFFFFD700));
     }
   }
 
@@ -4852,56 +4991,103 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     }
   }
 
-  // 증강 선택 UI (임시 플레이스홀더 - Designer에서 구체화)
+  // #37 증강 선택 UI (스펙 준수: 티어별 색상 카드, 전설 글로우 연출)
   void _renderAugmentSelectionUI(Canvas canvas) {
-    final bgPaint = Paint()..color = const Color(0xEE0A0A1A);
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y), bgPaint);
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y),
+        Paint()..color = const Color(0xF00A0A1A));
 
-    _drawCenteredText(canvas, '⚡ 증강 선택 ⚡', Offset(size.x / 2, size.y * 0.08),
-        fontSize: 20, color: const Color(0xFFFFD700));
-    _drawCenteredText(canvas, 'Round $currentRound 클리어!', Offset(size.x / 2, size.y * 0.15),
-        fontSize: 14, color: const Color(0xFFCCCCCC));
+    // 타이틀 (금색 펄스)
+    final double tp = 0.9 + 0.1 * sin(gameTime * 2.5);
+    _drawCenteredText(canvas, '⚡ 증강 선택 ⚡',
+        Offset(size.x / 2, size.y * 0.06),
+        fontSize: 22,
+        color: Color.fromRGBO(255, (215 * tp).toInt(), 0, 1.0));
+    _drawCenteredText(canvas, 'Round \$currentRound — 1개를 선택하세요',
+        Offset(size.x / 2, size.y * 0.13),
+        fontSize: 11, color: const Color(0xFF888888));
 
     if (_augmentOptions.isEmpty) {
       _drawCenteredText(canvas, '증강 없음', Offset(size.x / 2, size.y / 2),
-          fontSize: 16, color: const Color(0xFF888888));
+          fontSize: 16, color: const Color(0xFF555555));
       return;
     }
 
-    // 카드 3열 배치
-    final double cardW = size.x / 3 - 8;
-    final double cardH = size.y * 0.5;
-    final double cardY = size.y * 0.22;
+    final double cW = size.x / 3 - 10;
+    final double cH = size.y * 0.52;
+    final double cY = size.y * 0.19;
 
     for (int i = 0; i < _augmentOptions.length; i++) {
       final aug = _augmentOptions[i];
-      final double cardX = i * (size.x / 3) + 4;
+      final double cX = i * (size.x / 3) + 5;
+      final cRect = Rect.fromLTWH(cX, cY, cW, cH);
 
-      // 티어별 카드 배경색
-      final Color tierColor;
+      Color bg, brd, lblC;
+      String lbl;
       switch (aug.tier) {
-        case AugmentTier.legendary: tierColor = const Color(0x88FFD700); break;
-        case AugmentTier.rare: tierColor = const Color(0x882196F3); break;
-        default: tierColor = const Color(0x889E9E9E); break;
+        case AugmentTier.legendary:
+          bg = const Color(0xCC3D2B00); brd = const Color(0xFFFFD700);
+          lblC = const Color(0xFFFFD700); lbl = '✨ 伝説'; break;
+        case AugmentTier.rare:
+          bg = const Color(0xCC0D1F3C); brd = const Color(0xFF2196F3);
+          lblC = const Color(0xFF64B5F6); lbl = '💎 希少'; break;
+        default:
+          bg = const Color(0xCC1C1C1C); brd = const Color(0xFF9E9E9E);
+          lblC = const Color(0xFFBBBBBB); lbl = '⬜ 一般';
       }
-      final cardPaint = Paint()..color = tierColor;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(Rect.fromLTWH(cardX, cardY, cardW, cardH), const Radius.circular(8)),
-        cardPaint,
-      );
 
-      // 카드 내용
-      final double textX = cardX + cardW / 2;
+      // 전설 글로우 링
+      if (aug.tier == AugmentTier.legendary) {
+        final double ga = 0.15 + 0.1 * sin(gameTime * 3 + i * 1.2);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(cRect.inflate(3), const Radius.circular(13)),
+          Paint()..color = Color.fromRGBO(255, 215, 0, ga));
+      }
+
+      // 카드 배경 + 테두리
+      canvas.drawRRect(RRect.fromRectAndRadius(cRect, const Radius.circular(10)),
+          Paint()..color = bg);
+      canvas.drawRRect(RRect.fromRectAndRadius(cRect, const Radius.circular(10)),
+          Paint()
+            ..color = brd
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = aug.tier == AugmentTier.legendary ? 2.5 : 1.5);
+
       // 티어 레이블
-      final String tierLabel = aug.tier == AugmentTier.legendary ? '伝説'
-          : aug.tier == AugmentTier.rare ? '希少' : '一般';
-      _drawCenteredText(canvas, tierLabel, Offset(textX, cardY + 16), fontSize: 11, color: const Color(0xFFFFFFFF));
-      _drawCenteredText(canvas, aug.nameJp, Offset(textX, cardY + 40), fontSize: 12, color: const Color(0xFFFFFFFF));
-      _drawCenteredText(canvas, aug.description, Offset(textX, cardY + 70), fontSize: 9, color: const Color(0xFFCCCCCC));
+      _drawCenteredText(canvas, lbl, Offset(cX + cW / 2, cY + 16),
+          fontSize: 10, color: lblC);
+
+      // 구분선
+      canvas.drawLine(Offset(cX + 8, cY + 29), Offset(cX + cW - 8, cY + 29),
+          Paint()..color = brd.withValues(alpha: 0.4)..strokeWidth = 0.8);
+
+      // 카테고리 아이콘 + 이름 + 설명
+      _drawCenteredText(canvas, _augmentCategoryIcon(aug.category),
+          Offset(cX + cW / 2, cY + 52), fontSize: 24);
+      _drawCenteredText(canvas, aug.nameJp,
+          Offset(cX + cW / 2, cY + 82), fontSize: 13, color: const Color(0xFFFFFFFF));
+      _drawCenteredText(canvas, aug.description,
+          Offset(cX + cW / 2, cY + 108), fontSize: 8.5, color: const Color(0xFFBBBBBB));
     }
 
-    _drawCenteredText(canvas, '탭으로 선택', Offset(size.x / 2, size.y * 0.85),
-        fontSize: 12, color: const Color(0xFF888888));
+    // 하단 안내 점멸
+    _drawCenteredText(canvas, '카드를 탭해서 선택',
+        Offset(size.x / 2, size.y * 0.84),
+        fontSize: 12,
+        color: Color.fromRGBO(200, 200, 200, 0.6 + 0.4 * sin(gameTime * 2)));
+  }
+
+  // 증강 카테고리 아이콘 헬퍼
+  String _augmentCategoryIcon(AugmentCategory cat) {
+    switch (cat) {
+      case AugmentCategory.main:      return '⚔️';
+      case AugmentCategory.tower:     return '🏹';
+      case AugmentCategory.castle:    return '🏰';
+      case AugmentCategory.utility:   return '🔧';
+      case AugmentCategory.economy:   return '💰';
+      case AugmentCategory.elemental: return '🌟';
+      case AugmentCategory.special:   return '✨';
+      case AugmentCategory.synergy:   return '🔗';
+    }
   }
 
   // 리디자인 B-2-16: 상점 화면 임시 오버레이 (Designer D-2-2에서 구체화)
@@ -6863,6 +7049,124 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     // 노브 중앙 점
     final knobDotPaint = Paint()..color = const Color(0x88333333);
     canvas.drawCircle(baseCenter, 5.0, knobDotPaint);
+  }
+
+  // ============================================================
+  // D-1-4: 스킬 버튼 UI (화면 우측 하단, 원형 게이지)
+  // ============================================================
+  void _renderSkillButton(Canvas canvas) {
+    const double btnRadius = 38.0;
+    const double gaugeStroke = 6.0;
+    const double marginRight = 55.0;
+    const double marginBottom = 90.0;
+    final Offset center = Offset(size.x - marginRight, size.y - marginBottom);
+
+    // 버튼 배경 (반투명 검정)
+    final bgPaint = Paint()..color = const Color(0xCC000000);
+    canvas.drawCircle(center, btnRadius, bgPaint);
+
+    // 게이지 트랙 (어두운 회색)
+    final trackPaint = Paint()
+      ..color = const Color(0xFF333333)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = gaugeStroke;
+    canvas.drawCircle(center, btnRadius - gaugeStroke / 2, trackPaint);
+
+    // 원형 게이지 (skillGauge 0~100 → 호 각도)
+    if (skillGauge > 0) {
+      final gaugeColor = skillReady
+          ? const Color(0xFFFF6E40) // 준비 완료: 주황-빨강
+          : const Color(0xFF2196F3); // 충전 중: 파랑
+      final gaugePaint = Paint()
+        ..color = gaugeColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = gaugeStroke
+        ..strokeCap = StrokeCap.round;
+      const double startAngle = -3.14159265 / 2; // 12시 방향
+      final double sweepAngle = 2 * 3.14159265 * (skillGauge / 100.0);
+      canvas.drawArc(
+        Rect.fromCircle(
+            center: center, radius: btnRadius - gaugeStroke / 2),
+        startAngle,
+        sweepAngle,
+        false,
+        gaugePaint,
+      );
+    }
+
+    // 스킬 아이콘 이모지 (준비 완료 시 밝게)
+    final iconColor = skillReady
+        ? const Color(0xFFFFFFFF)
+        : const Color(0xAAFFFFFF);
+    _drawCenteredText(
+      canvas,
+      skillReady ? '💥' : '⚡',
+      Offset(center.dx, center.dy - 6),
+      fontSize: 20,
+      color: iconColor,
+    );
+
+    // 게이지 퍼센트 텍스트
+    _drawCenteredText(
+      canvas,
+      skillReady ? 'READY' : '${skillGauge.toInt()}%',
+      Offset(center.dx, center.dy + 14),
+      fontSize: 9,
+      color: skillReady ? const Color(0xFFFF6E40) : const Color(0xAAFFFFFF),
+    );
+
+    // 준비 완료 시 외곽 발광 링
+    if (skillReady) {
+      final glowPaint = Paint()
+        ..color = const Color(0x44FF6E40)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4.0;
+      canvas.drawCircle(center, btnRadius + 6, glowPaint);
+    }
+  }
+
+  // ============================================================
+  // D-1-5: 골드 표시 UI (화면 우측 하단, 스킬 버튼 왼쪽)
+  // ============================================================
+  void _renderGoldDisplay(Canvas canvas) {
+    const double marginRight = 110.0;
+    const double marginBottom = 78.0;
+    const double bgW = 72.0;
+    const double bgH = 28.0;
+    final double x = size.x - marginRight - bgW / 2;
+    final double y = size.y - marginBottom;
+
+    // 반투명 배경 박스
+    final bgPaint = Paint()..color = const Color(0x80000000);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: Offset(x, y), width: bgW, height: bgH),
+        const Radius.circular(14),
+      ),
+      bgPaint,
+    );
+
+    // 테두리
+    final borderPaint = Paint()
+      ..color = const Color(0x88FFD700)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: Offset(x, y), width: bgW, height: bgH),
+        const Radius.circular(14),
+      ),
+      borderPaint,
+    );
+
+    // 코인 이모지 + 골드 수치
+    _drawCenteredText(
+      canvas,
+      '🪙${playerGold}G',
+      Offset(x, y),
+      fontSize: 13,
+      color: const Color(0xFFFFD700),
+    );
   }
 
   // ============================================================
