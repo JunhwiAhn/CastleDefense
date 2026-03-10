@@ -46,6 +46,59 @@ enum DamageType {
   debuff,
 }
 
+// 속성 시스템 (element-system.md 참조)
+enum ElementType {
+  fire,     // 화염
+  water,    // 수빙
+  earth,    // 대지
+  electric, // 번개
+  dark,     // 암흑
+  none,     // 무속성
+}
+
+extension ElementTypeExtension on ElementType {
+  // 표시 색상 (0xAARRGGBB)
+  int get color {
+    switch (this) {
+      case ElementType.fire: return 0xFFF44336;
+      case ElementType.water: return 0xFF2196F3;
+      case ElementType.earth: return 0xFF8BC34A;
+      case ElementType.electric: return 0xFFFFD700;
+      case ElementType.dark: return 0xFF9C27B0;
+      case ElementType.none: return 0xFF9E9E9E;
+    }
+  }
+
+  String get emoji {
+    switch (this) {
+      case ElementType.fire: return '🔥';
+      case ElementType.water: return '💧';
+      case ElementType.earth: return '🌿';
+      case ElementType.electric: return '⚡';
+      case ElementType.dark: return '🌑';
+      case ElementType.none: return '';
+    }
+  }
+}
+
+extension ClassTypeElementExtension on ClassType {
+  // ClassType → 기본 속성 매핑 (element-system.md 기준)
+  ElementType get defaultElement {
+    switch (this) {
+      case ClassType.pyromancer: return ElementType.fire;
+      case ClassType.cryomancer: return ElementType.water;
+      case ClassType.druid: return ElementType.earth;
+      case ClassType.alchemist: return ElementType.earth;
+      case ClassType.engineer: return ElementType.electric;
+      case ClassType.trickster: return ElementType.electric;
+      case ClassType.necromancer: return ElementType.dark;
+      case ClassType.summoner: return ElementType.dark;
+      case ClassType.vampire: return ElementType.dark;
+      default: return ElementType.none;
+    }
+  }
+}
+
 extension RankTypeExtension on RankType {
   String get displayName {
     switch (this) {

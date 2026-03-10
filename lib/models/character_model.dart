@@ -27,6 +27,8 @@ class CharacterDefinition {
   final CharacterBaseStats baseStats;
   final String skillId;
   final String description;
+  // 속성 시스템: ClassType 기본 속성 자동 할당 (element-system.md)
+  ElementType get element => classType.defaultElement;
 
   const CharacterDefinition({
     required this.id,

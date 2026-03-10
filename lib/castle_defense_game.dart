@@ -43,6 +43,13 @@ enum BuffType {
   towerPowerUp, // 전체 타워 공격력 +10% (최대 5회)
   xpMagnetUp,  // 젬 회수 반경 +15px (최대 3회)
   castleBarrier, // 10초 성 무적 (무제한)
+  // 속성 시스템: 속성 부여 바프 (최대 1회, 상덮어쓰기)
+  elementFireGrant,     // 화염 속성 부여
+  elementWaterGrant,    // 수빙 속성 부여
+  elementEarthGrant,    // 대지 속성 부여
+  elementElectricGrant, // 번개 속성 부여
+  elementDarkGrant,     // 암흑 속성 부여
+  elementMastery,       // 속성 데미지 보너스 +10% (최대 3회)
 }
 
 enum BottomMenu {
@@ -233,12 +240,22 @@ class _Monster {
   double animationTimer = 0.0; // アニメーションタイマー
   int currentFrame = 0; // 現在のフレーム (0-3)
 
+  // 속성 시스템: 몬스터 속성 및 상태이상 (element-system.md)
+  ElementType element = ElementType.none;
+  double burnTimer = 0.0;     // 화상: 3초간 0.5초마다 5% 지속 데미지
+  double burnTickTimer = 0.0; // 화상 틱 카운터
+  double freezeTimer = 0.0;   // 빙결: 2초간 이동속도 50% 감소
+  double bindTimer = 0.0;     // 속박: 1.5초간 완전 정지
+  double shockTimer = 0.0;    // 감전: 3초간 공격속도 30% 감소
+  double curseTimer = 0.0;    // 저주: 4초간 피격 데미지 20% 증가
+
   _Monster({
     required this.pos,
     required this.hp,
     required this.maxHp,
     required this.walking,
     this.type = MonsterType.normal,
+    this.element = ElementType.none,
   }) : displayHp = hp.toDouble();
 }
 
@@ -492,6 +509,10 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   int _shopCastleMaxHpCount = 0;    // 성 최대 HP +20 구매 횟수 (최대 10)
   int _shopTowerPowerCount = 0;     // 타워 공격력 +5% 구매 횟수 (최대 10)
   int _shopMainCharHpCount = 0;     // 메인 캐릭터 HP +10 구매 횟수 (최대 5)
+  // 속성 시스템: 메인 캐릭터 현재 속성 (바프로 부여, 스테이지 내 유지)
+  ElementType _mainCharElement = ElementType.none;
+  int _elementMasteryCount = 0; // 속성 마스터리 스택 (최대 3)
+
   // 레벨업 바프 선택지 (3장)
   List<BuffType> _buffOptions = [];
   BuffType? _lastChosenBuff; // 직전 선택 바프 (50% 확률 감소용)
@@ -700,6 +721,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     playerXp = 0;
     playerCharLevel = 1;
     _pendingLevelUp = false;
+    // 속성 시스템: 스테이지 시작 시 속성 리셋 (바프로 재부여)
+    _mainCharElement = ElementType.none;
+    _elementMasteryCount = 0;
 
     _loadRound(1); // 첫 번째 라운드 로딩
   }
@@ -925,6 +949,22 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         }
       }
 
+      // 속성 시스템: 상태이상 타이머 업데이트 (element-system.md)
+      if (m.burnTimer > 0) {
+        m.burnTimer -= dt;
+        m.burnTickTimer -= dt;
+        if (m.burnTickTimer <= 0) {
+          m.burnTickTimer = 0.5; // 0.5초마다 틱
+          final int burnDmg = max(1, (m.maxHp * 0.05).round());
+          _damageMonster(m, burnDmg);
+          if (i >= monsters.length) break; // 죽은 경우 중단
+        }
+      }
+      if (m.freezeTimer > 0) m.freezeTimer -= dt;
+      if (m.bindTimer > 0) m.bindTimer -= dt;
+      if (m.shockTimer > 0) m.shockTimer -= dt;
+      if (m.curseTimer > 0) m.curseTimer -= dt;
+
       // 리디자인: falling 로직 삭제, walking만 존재
       if (m.walking) {
         // 어그로 타겟 설정 (탱커 우선)
@@ -981,12 +1021,15 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         }
 
         // 리디자인: 2D 직선 이동, 타입별 속도
+        // 속성 시스템: 속박 중에는 이동 정지, 빙결 중에는 50% 감소
+        if (m.bindTimer > 0) continue; // 속박: 완전 정지
         if (dist > 0) {
-          final speed = m.type == MonsterType.boss
+          double speed = m.type == MonsterType.boss
               ? _bossSpeed
               : m.type == MonsterType.miniBoss
                   ? _miniBossSpeed
                   : _normalMonsterSpeed;
+          if (m.freezeTimer > 0) speed *= 0.5; // 빙결: 이동속도 50% 감소
           m.pos.x += (dx / dist) * speed * dt;
           m.pos.y += (dy / dist) * speed * dt;
         }
@@ -1059,6 +1102,11 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       m.castleAttackTimer = 0.0;
       m.animationTimer = 0.0;
       m.currentFrame = 0;
+      // 속성 시스템 리셋
+      m.element = ElementType.none;
+      m.burnTimer = 0.0; m.burnTickTimer = 0.0;
+      m.freezeTimer = 0.0; m.bindTimer = 0.0;
+      m.shockTimer = 0.0; m.curseTimer = 0.0;
       return m;
     }
     return _Monster(pos: pos, hp: hp, maxHp: maxHp, walking: true, type: type);
@@ -1084,12 +1132,17 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     final spawnPos = _randomEdgeSpawnPos();
 
     // B-3-2: 오브젝트 풀에서 획득
-    monsters.add(_acquireMonster(
+    // 속성 시스템: 스테이지별 속성 80%, 무속성 20%
+    final ElementType spawnElement = _random.nextDouble() < 0.8
+        ? _getStageElement(stageLevel) : ElementType.none;
+    final mon = _acquireMonster(
       pos: spawnPos,
       hp: monsterMaxHp,
       maxHp: monsterMaxHp,
       type: MonsterType.normal,
-    ));
+    );
+    mon.element = spawnElement;
+    monsters.add(mon);
     spawnedMonsters++;
 
     // 리디자인 B-2-17: 모든 일반 몬스터 스폰 후 보스/미니보스 스폰
@@ -1118,12 +1171,16 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     }
 
     // B-3-2: 오브젝트 풀에서 획득
-    monsters.add(_acquireMonster(
+    // 속성 시스템: 보스/미니보스는 스테이지 속성 고정
+    final ElementType bossElement = _getStageElement(stageLevel);
+    final bossMonster = _acquireMonster(
       pos: spawnPos,
       hp: bossHp,
       maxHp: bossHp,
       type: bossType,
-    ));
+    );
+    bossMonster.element = bossElement;
+    monsters.add(bossMonster);
 
     if (bossType == MonsterType.boss) {
       bossSpawned = true;
@@ -1189,7 +1246,20 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       BuffType.towerPowerUp: 5,
       BuffType.xpMagnetUp: 3,
       BuffType.castleBarrier: 999,
+      // 속성 시스템: 속성 부여 1회, 속성 마스터리 3회
+      BuffType.elementFireGrant: 1,
+      BuffType.elementWaterGrant: 1,
+      BuffType.elementEarthGrant: 1,
+      BuffType.elementElectricGrant: 1,
+      BuffType.elementDarkGrant: 1,
+      BuffType.elementMastery: 3,
     };
+    // 속성 부여 바프: 다른 속성 부여도 1번만 → 현재 속성이 같으면 이미 취득으로 간주
+    final bool hasFireGrant = _mainCharElement == ElementType.fire;
+    final bool hasWaterGrant = _mainCharElement == ElementType.water;
+    final bool hasEarthGrant = _mainCharElement == ElementType.earth;
+    final bool hasElectricGrant = _mainCharElement == ElementType.electric;
+    final bool hasDarkGrant = _mainCharElement == ElementType.dark;
     final currentCounts = {
       BuffType.attackUp: _atkUpCount,
       BuffType.attackSpdUp: _spdUpCount,
@@ -1199,11 +1269,17 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       BuffType.towerPowerUp: _towerUpCount,
       BuffType.xpMagnetUp: _magnetCount,
       BuffType.castleBarrier: 0,
+      BuffType.elementFireGrant: hasFireGrant ? 1 : 0,
+      BuffType.elementWaterGrant: hasWaterGrant ? 1 : 0,
+      BuffType.elementEarthGrant: hasEarthGrant ? 1 : 0,
+      BuffType.elementElectricGrant: hasElectricGrant ? 1 : 0,
+      BuffType.elementDarkGrant: hasDarkGrant ? 1 : 0,
+      BuffType.elementMastery: _elementMasteryCount,
     };
 
     // 중복 가능한 바프만 후보에 포함
     final candidates = allBuffs.where((b) =>
-        currentCounts[b]! < maxCounts[b]!
+        (currentCounts[b] ?? 0) < (maxCounts[b] ?? 0)
     ).toList();
 
     // 후보가 3개 미만이면 무제한 바프를 강제 추가
@@ -1265,6 +1341,25 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         _castleBarrierActive = true;
         _castleBarrierTimer = _castleBarrierDuration;
         break;
+      // 속성 시스템: 속성 부여 바프 (element-system.md)
+      case BuffType.elementFireGrant:
+        _mainCharElement = ElementType.fire;
+        break;
+      case BuffType.elementWaterGrant:
+        _mainCharElement = ElementType.water;
+        break;
+      case BuffType.elementEarthGrant:
+        _mainCharElement = ElementType.earth;
+        break;
+      case BuffType.elementElectricGrant:
+        _mainCharElement = ElementType.electric;
+        break;
+      case BuffType.elementDarkGrant:
+        _mainCharElement = ElementType.dark;
+        break;
+      case BuffType.elementMastery:
+        if (_elementMasteryCount < 3) _elementMasteryCount++;
+        break;
     }
     _lastChosenBuff = buff;
     _buffOptions = [];
@@ -1282,6 +1377,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       pow(1.10, _towerUpCount).toDouble() * pow(1.05, _shopTowerPowerCount).toDouble();
   // 리디자인 B-2-12: XP 자석 반경 (기본 20px + 스택당 +15px)
   double get _xpCollectRadius => 20.0 + 15.0 * _magnetCount;
+  // 속성 시스템: 속성 마스터리 배율 (기본 x1.0, 스택당 +10%)
+  double get _elementMasteryMultiplier => 1.0 + 0.1 * _elementMasteryCount;
 
   // 리디자인 B-2-14: 필살기 발동 (스킬 게이지 100% 시 전체 화면 999 데미지)
   void _fireUltimateSkill() {
@@ -1840,6 +1937,49 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   }
 
   // 몬스터에게 데미지 (플래시 효과 포함)
+  // 속성 시스템: 스테이지별 기본 몬스터 속성 (element-system.md)
+  ElementType _getStageElement(int stage) {
+    switch (stage) {
+      case 1: return ElementType.earth;    // 숲 고블린
+      case 2: return ElementType.fire;     // 화산
+      case 3: return ElementType.water;    // 해안/동굴
+      case 4: return ElementType.electric; // 폭풍의 탑
+      case 5: return ElementType.dark;     // 암흑성
+      default: return ElementType.earth;
+    }
+  }
+
+  // 속성 상성 배율 (element-system.md 상성표)
+  double getElementMultiplier(ElementType attacker, ElementType defender) {
+    if (attacker == ElementType.none || defender == ElementType.none) return 1.0;
+    // 闇속성: 모든 속성에 x1.1 (대闇은 x1.0)
+    if (attacker == ElementType.dark) {
+      return defender == ElementType.dark ? 1.0 : 1.1;
+    }
+    // 상성 유리: x1.5
+    if (attacker == ElementType.fire && defender == ElementType.earth) return 1.5;
+    if (attacker == ElementType.water && defender == ElementType.fire) return 1.5;
+    if (attacker == ElementType.earth && defender == ElementType.electric) return 1.5;
+    if (attacker == ElementType.electric && defender == ElementType.water) return 1.5;
+    // 상성 불리: x0.75
+    if (attacker == ElementType.fire && defender == ElementType.water) return 0.75;
+    if (attacker == ElementType.water && defender == ElementType.earth) return 0.75;
+    if (attacker == ElementType.earth && defender == ElementType.fire) return 0.75;
+    if (attacker == ElementType.electric && defender == ElementType.earth) return 0.75;
+    // 闇속성을 공격받는 경우 x1.1
+    if (defender == ElementType.dark) return 1.1;
+    return 1.0;
+  }
+
+  // 속성 데미지 적용 (_damageMonsterWithElement 사용 권장)
+  void _damageMonsterWithElement(_Monster monster, int baseDamage, ElementType attackerElement) {
+    final double elementMult = getElementMultiplier(attackerElement, monster.element);
+    // 저주 상태이상: 피격 데미지 20% 증가
+    final double curseMult = monster.curseTimer > 0 ? 1.2 : 1.0;
+    final int finalDamage = (baseDamage * elementMult * curseMult).round();
+    _damageMonster(monster, finalDamage);
+  }
+
   void _damageMonster(_Monster monster, int damage) {
     monster.hp -= damage;
     monster.damageFlashTimer = 0.15; // 0.15초 동안 빨간색 점멸
@@ -3162,6 +3302,12 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       case BuffType.towerPowerUp: return 'TOWER UP';
       case BuffType.xpMagnetUp: return 'MAGNET';
       case BuffType.castleBarrier: return 'BARRIER';
+      case BuffType.elementFireGrant: return '🔥 FIRE';
+      case BuffType.elementWaterGrant: return '💧 WATER';
+      case BuffType.elementEarthGrant: return '🌿 EARTH';
+      case BuffType.elementElectricGrant: return '⚡ ELECTRIC';
+      case BuffType.elementDarkGrant: return '🌑 DARK';
+      case BuffType.elementMastery: return 'ELEM MASTERY';
     }
   }
 
@@ -3176,6 +3322,12 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       case BuffType.towerPowerUp: return 'Tower ATK +10%\n(max 5)';
       case BuffType.xpMagnetUp: return 'XP Radius +15px\n(max 3)';
       case BuffType.castleBarrier: return '10s Barrier';
+      case BuffType.elementFireGrant: return '화염 속성 부여\n(상덮어쓰기)';
+      case BuffType.elementWaterGrant: return '수빙 속성 부여\n(상덮어쓰기)';
+      case BuffType.elementEarthGrant: return '대지 속성 부여\n(상덮어쓰기)';
+      case BuffType.elementElectricGrant: return '번개 속성 부여\n(상덮어쓰기)';
+      case BuffType.elementDarkGrant: return '암흑 속성 부여\n(상덮어쓰기)';
+      case BuffType.elementMastery: return '속성 보너스\n+10% (max 3)';
     }
   }
 
