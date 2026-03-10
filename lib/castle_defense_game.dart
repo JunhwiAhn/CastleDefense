@@ -5,6 +5,7 @@ import 'dart:ui';
 
 import 'package:flame/events.dart';
 import 'package:flame/extensions.dart';
+import 'package:flame/camera.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/painting.dart';
 
@@ -572,6 +573,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   Image? minibossMonsterImage;
   bool minibossMonsterImageLoaded = false;
 
+  // B-3-2: 몬스터 오브젝트 풀 (GC 압력 감소)
+  final List<_Monster> _monsterPool = [];
+
   // 캐릭터 설정
   final double characterUnitRadius = 12.0; // 캐릭터 크기
   final double projectileSpeed = 200.0; // 투사물 속도
@@ -593,6 +597,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   @override
   Future<void> onLoad() async {
     await super.onLoad();
+    // 리디자인 B-3-1: 기준 해상도 390×844 (FitWidth 스케일링)
+    camera.viewport = FixedResolutionViewport(resolution: Vector2(390, 844));
     _initializeCharacterSlots(); // 캐릭터 슬롯 초기화
     _loadStage(1); // 내부 파라미터 초기화
     gameState = GameState.loading; // GameScreen 진입 즉시 로딩부터 시작
@@ -965,6 +971,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
             castleHp = max(0, castleHp - 1);
             castleFlashTimer = 0.2; // D-3-1: 성 피격 점멸
           }
+          _releaseMonster(monsters[i]); // B-3-2: 풀로 반환
           monsters.removeAt(i);
           escapedMonsters++;
           continue;
@@ -1030,6 +1037,39 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     }
   }
 
+  // B-3-2: 오브젝트 풀에서 몬스터 획득 (없으면 새로 생성)
+  _Monster _acquireMonster({
+    required Vector2 pos,
+    required int hp,
+    required int maxHp,
+    required MonsterType type,
+  }) {
+    if (_monsterPool.isNotEmpty) {
+      final m = _monsterPool.removeLast();
+      m.pos.setFrom(pos);
+      m.hp = hp;
+      m.maxHp = maxHp;
+      m.type = type;
+      m.walking = true;
+      m.damageFlashTimer = 0.0;
+      m.displayHp = hp.toDouble();
+      m.lastHitTime = 0.0;
+      m.aggroTarget = null;
+      m.attackingCastle = false;
+      m.castleAttackTimer = 0.0;
+      m.animationTimer = 0.0;
+      m.currentFrame = 0;
+      return m;
+    }
+    return _Monster(pos: pos, hp: hp, maxHp: maxHp, walking: true, type: type);
+  }
+
+  // B-3-2: 몬스터를 풀로 반환
+  void _releaseMonster(_Monster m) {
+    m.aggroTarget = null; // 참조 해제로 GC 도움
+    _monsterPool.add(m);
+  }
+
   void _spawnMonster() {
     if (size.x <= 0 || size.y <= 0) return;
 
@@ -1043,15 +1083,13 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     // 리디자인: 4방향 랜덤 스폰
     final spawnPos = _randomEdgeSpawnPos();
 
-    monsters.add(
-      _Monster(
-        pos: spawnPos,
-        hp: monsterMaxHp,
-        maxHp: monsterMaxHp,
-        walking: true,
-        type: MonsterType.normal,
-      ),
-    );
+    // B-3-2: 오브젝트 풀에서 획득
+    monsters.add(_acquireMonster(
+      pos: spawnPos,
+      hp: monsterMaxHp,
+      maxHp: monsterMaxHp,
+      type: MonsterType.normal,
+    ));
     spawnedMonsters++;
 
     // 리디자인 B-2-17: 모든 일반 몬스터 스폰 후 보스/미니보스 스폰
@@ -1079,15 +1117,13 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       bossHp = _getMiniBossHp(stageLevel);
     }
 
-    monsters.add(
-      _Monster(
-        pos: spawnPos,
-        hp: bossHp,
-        maxHp: bossHp,
-        walking: true,
-        type: bossType,
-      ),
-    );
+    // B-3-2: 오브젝트 풀에서 획득
+    monsters.add(_acquireMonster(
+      pos: spawnPos,
+      hp: bossHp,
+      maxHp: bossHp,
+      type: bossType,
+    ));
 
     if (bossType == MonsterType.boss) {
       bossSpawned = true;
@@ -1103,6 +1139,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     final dropPos = m.pos.clone();
     final mType = m.type;
     monsters.removeAt(index);
+    _releaseMonster(m); // B-3-2: 풀로 반환
     defeatedMonsters++;
 
     // 리디자인 B-2-8: XP 젬 드롭
@@ -1205,21 +1242,29 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     switch (buff) {
       case BuffType.attackUp:
         if (_atkUpCount < 5) _atkUpCount++;
+        break;
       case BuffType.attackSpdUp:
         if (_spdUpCount < 5) _spdUpCount++;
+        break;
       case BuffType.moveSpeedUp:
         if (_moveUpCount < 3) _moveUpCount++;
+        break;
       case BuffType.rangeUp:
         if (_rangeUpCount < 3) _rangeUpCount++;
+        break;
       case BuffType.castleRepair:
         castleHp = min(castleMaxHp, castleHp + 20);
+        break;
       case BuffType.towerPowerUp:
         if (_towerUpCount < 5) _towerUpCount++;
+        break;
       case BuffType.xpMagnetUp:
         if (_magnetCount < 3) _magnetCount++;
+        break;
       case BuffType.castleBarrier:
         _castleBarrierActive = true;
         _castleBarrierTimer = _castleBarrierDuration;
+        break;
     }
     _lastChosenBuff = buff;
     _buffOptions = [];
@@ -1513,10 +1558,11 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       final gem = xpGems[i];
       gem.lifeTimer -= dt;
 
-      // 회수 체크
+      // B-3-3: dist² 비교 (sqrt 없는 최적화)
       if (mainUnit != null) {
-        final dist = (gem.pos - mainUnit.pos).length;
-        if (dist <= collectRadius) {
+        final dx = gem.pos.x - mainUnit.pos.x;
+        final dy = gem.pos.y - mainUnit.pos.y;
+        if (dx * dx + dy * dy <= collectRadius * collectRadius) {
           // 리디자인 B-2-10: XP 가산 및 레벨업 체크
           playerXp += gem.xpValue;
           _checkLevelUp();
@@ -1540,10 +1586,13 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     if (mainUnit == null) return;
     const double collectRadius = 24.0;
 
+    // B-3-3: dist² 비교 (sqrt 없는 최적화)
+    final double collectRadiusSq = collectRadius * collectRadius;
     for (int i = goldDrops.length - 1; i >= 0; i--) {
       final drop = goldDrops[i];
-      final dist = (drop.pos - mainUnit.pos).length;
-      if (dist <= collectRadius) {
+      final dx = drop.pos.x - mainUnit.pos.x;
+      final dy = drop.pos.y - mainUnit.pos.y;
+      if (dx * dx + dy * dy <= collectRadiusSq) {
         playerGold += drop.goldValue;
         goldDrops.removeAt(i);
       }
@@ -1839,11 +1888,14 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
     for (final unit in characterUnits) {
       for (final monster in monsters) {
-        // 충돌 체크
-        final distance = (unit.pos - monster.pos).length;
+        // B-3-3: sqrt 없이 dist² 비교 (성능 최적화)
+        final dx = unit.pos.x - monster.pos.x;
+        final dy = unit.pos.y - monster.pos.y;
+        final distSq = dx * dx + dy * dy;
         final collisionRadius = characterUnitRadius + _getMonsterRadius(monster);
+        final collisionRadiusSq = collisionRadius * collisionRadius;
 
-        if (distance < collisionRadius) {
+        if (distSq < collisionRadiusSq) {
           // 충돌 발생! 쿨다운 체크
           if (gameTime - monster.lastHitTime >= hitCooldown) {
             // 데미지 적용
@@ -4270,19 +4322,17 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     _drawCenteredText(canvas, 'SHOP — Gold: ${playerGold}G', Offset(size.x / 2, size.y * 0.28),
         fontSize: 16, color: const Color(0xFFFFCC44));
 
-    // 아이템 목록 (임시)
-    final items = [
-      ('Castle MaxHP +20', '50G', _shopCastleMaxHpCount, 10),
-      ('Tower ATK +5%',    '30G', _shopTowerPowerCount, 10),
-      ('Main HP +10',      '20G', _shopMainCharHpCount, 5),
-    ];
-    for (int i = 0; i < items.length; i++) {
-      final (name, price, count, max) = items[i];
+    // 아이템 목록 (임시) - Dart 2.x 호환 구조
+    final itemNames  = ['Castle MaxHP +20', 'Tower ATK +5%', 'Main HP +10'];
+    final itemPrices = ['50G', '30G', '20G'];
+    final itemCounts = [_shopCastleMaxHpCount, _shopTowerPowerCount, _shopMainCharHpCount];
+    final itemMaxes  = [10, 10, 5];
+    for (int i = 0; i < itemNames.length; i++) {
       final double y = size.y * (0.38 + i * 0.12);
-      final color = count >= max
+      final color = itemCounts[i] >= itemMaxes[i]
           ? const Color(0xFF666666)
           : const Color(0xFFCCCCCC);
-      _drawCenteredText(canvas, '$name  [$count/$max]  $price',
+      _drawCenteredText(canvas, '${itemNames[i]}  [${itemCounts[i]}/${itemMaxes[i]}]  ${itemPrices[i]}',
           Offset(size.x / 2, y), fontSize: 13, color: color);
     }
 
