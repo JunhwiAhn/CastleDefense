@@ -166,7 +166,7 @@ class _Monster {
   Vector2 pos;
   int hp;
   int maxHp;
-  bool falling;
+  // 리디자인: falling 필드 삭제 (낙하 로직 제거)
   bool walking;
   MonsterType type;
   double damageFlashTimer = 0.0; // 데미지 점멸 타이머
@@ -184,7 +184,6 @@ class _Monster {
     required this.pos,
     required this.hp,
     required this.maxHp,
-    required this.falling,
     required this.walking,
     this.type = MonsterType.normal,
   }) : displayHp = hp.toDouble();
@@ -252,6 +251,10 @@ class _CharacterUnit {
   bool hasAttackSpeedBuff = false; // 공격속도 버프 보유 여부
   bool hasMoveSpeedBuff = false; // 이동속도 버프 보유 여부
 
+  // 리디자인: 타워 유닛 여부 (partySlots 인덱스 1-4)
+  bool isTower;
+  Vector2? towerFixedPos; // 타워 고정 좌표
+
   // 전사 검 휘두르기 애니메이션
   double swordSwingAngle = 0.0; // 현재 검 각도 (라디안)
   bool isSwinging = false; // 검을 휘두르는 중인지
@@ -271,6 +274,8 @@ class _CharacterUnit {
     this.attackCooldown = 0.0,
     this.targetMonster,
     this.movingTowardsTarget = false,
+    this.isTower = false,
+    this.towerFixedPos,
   });
 
   // 레벨에 따른 스탯 계산
@@ -300,13 +305,15 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   // 기본 설정
   // -----------------------------
   final double castleHeight = 80.0; // 2배로 확대
-  final int castleMaxHp = 10;
-  int castleHp = 10;
+  final int castleMaxHp = 200; // 리디자인: 성 최대 HP
+  int castleHp = 200; // 리디자인: 성 현재 HP
 
   // 몬스터 설정
   final double monsterRadius = 16.0;
-  final double monsterFallSpeed = 80.0; // 낙하 속도
-  final double monsterWalkSpeed = 50.0; // 걷기 속도
+  // 리디자인: 타입별 이동 속도 (낙하 속도 삭제)
+  static const double _normalMonsterSpeed = 40.0;
+  static const double _miniBossSpeed = 30.0;
+  static const double _bossSpeed = 25.0;
 
   // 무기 (프로토타입)
   final int weaponDamage = 1; // 기본검 데미지
@@ -378,7 +385,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   double _dragStartY = 0.0;
 
   // 파티 설정 (4개 슬롯)
-  final List<String?> partySlots = [null, null, null, null]; // instanceId 저장
+  // 리디자인: 5슬롯 (0=메인캐릭터, 1-4=타워)
+  final List<String?> partySlots = [null, null, null, null, null];
   bool showPartySelectionPopup = false;
   int selectedPartySlotIndex = -1; // 현재 선택 중인 파티 슬롯
   double partyPopupScrollOffset = 0.0; // 파티 팝업 스크롤 오프셋
@@ -413,7 +421,11 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   final double rangedRange = 375.0; // 원거리 공격 범위 (250 * 1.5)
   final double physicalDealerRange = 525.0; // 물리 딜러 사거리 (350 * 1.5)
   final double priestRange = 600.0; // 힐러(성직자) 사거리 (400 * 1.5)
-  final double topBoundary = 100.0; // 캐릭터가 올라갈 수 없는 상단 영역
+  final double topBoundary = 0.0; // 리디자인: 상단 제한 없음
+
+  // 성 중심 좌표 (화면 중앙)
+  double get castleCenterX => size.x / 2;
+  double get castleCenterY => size.y / 2;
 
   int get killedMonsters => defeatedMonsters;
 
@@ -445,7 +457,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   // 캐릭터 슬롯 초기화 (처음에는 모두 비어있음)
   void _initializeCharacterSlots() {
     characterSlots.clear();
-    for (int i = 0; i < 4; i++) {
+    // 리디자인: 5슬롯 (0=메인, 1-4=타워)
+    for (int i = 0; i < 5; i++) {
       characterSlots.add(_CharacterSlot(
         slotIndex: i,
         hasCharacter: false, // 모든 슬롯이 처음엔 비어있음
@@ -633,9 +646,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   // 몬스터 업데이트 / 스폰
   // -----------------------------
   void _updateMonsters(double dt) {
-    final groundY = size.y - castleHeight - monsterRadius - 8.0;
-    final castleCenterX = size.x / 2;
-    const double castleHitWidth = 60.0;
+    // 리디자인: groundY, monsterFallSpeed 삭제 (낙하 로직 제거)
+    // 리디자인: 성 접촉 반경 50px (2D 거리 체크)
+    const double castleContactRadius = 50.0;
 
     for (var i = monsters.length - 1; i >= 0; i--) {
       final m = monsters[i];
@@ -645,8 +658,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         m.damageFlashTimer -= dt;
       }
 
-      // スプライトアニメーション更新 (歩行中のみ)
-      if (m.walking || m.falling) {
+      // 스프라이트 애니메이션 업데이트 (이동 중에만)
+      if (m.walking) {
         m.animationTimer += dt;
         const double frameTime = 0.15; // 각 프레임 0.15초
         if (m.animationTimer >= frameTime) {
@@ -663,59 +676,64 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         }
       }
 
-      if (m.falling) {
-        m.pos.y += monsterFallSpeed * dt;
-        if (m.pos.y >= groundY) {
-          m.pos.y = groundY;
-          m.falling = false;
-          m.walking = true;
-        }
-      } else if (m.walking) {
+      // 리디자인: falling 로직 삭제, walking만 존재
+      if (m.walking) {
         // 어그로 타겟 설정 (탱커 우선)
         _updateMonsterAggro(m);
 
-        // 어그로 타겟이 있으면 그쪽으로, 없으면 성으로
+        // 이동 목표: 어그로 타겟이 있으면 그쪽, 없으면 성 중심
         double targetX;
+        double targetY;
         if (m.aggroTarget != null && characterUnits.contains(m.aggroTarget)) {
           targetX = m.aggroTarget!.pos.x;
+          targetY = m.aggroTarget!.pos.y;
         } else {
           targetX = castleCenterX;
+          targetY = castleCenterY;
         }
 
         final dx = targetX - m.pos.x;
+        final dy = targetY - m.pos.y;
+        final dist = sqrt(dx * dx + dy * dy);
 
-        // 성에 도달 체크 (어그로가 없을 때만)
-        if (m.aggroTarget == null && dx.abs() < castleHitWidth / 2) {
-          // 보스/미니보스가 성에 도달하면 지속적으로 데미지
+        // 성에 도달 체크 (어그로 없을 때만, 2D 거리)
+        if (m.aggroTarget == null && dist < castleContactRadius) {
+          // 보스/미니보스: 지속 데미지
           if (m.type == MonsterType.boss || m.type == MonsterType.miniBoss) {
             m.attackingCastle = true;
             m.castleAttackTimer += dt;
 
-            // 공격 간격: 보스 1초마다 2데미지, 미니보스 1.5초마다 1데미지
+            // 리디자인: 보스 1초마다 3데미지, 미니보스 1.5초마다 2데미지
             final attackInterval = m.type == MonsterType.boss ? 1.0 : 1.5;
-            final damage = m.type == MonsterType.boss ? 2 : 1;
+            final damage = m.type == MonsterType.boss ? 3 : 2;
 
             if (m.castleAttackTimer >= attackInterval) {
               m.castleAttackTimer = 0.0;
               castleHp = max(0, castleHp - damage);
             }
-            continue; // 성을 공격하는 동안 이동하지 않음
+            continue; // 성 공격 중에는 이동 안 함
           }
 
-          // 일반 몬스터는 성 HP만 감소하고 사라짐
+          // 일반 몬스터: 1데미지 후 소멸
           castleHp = max(0, castleHp - 1);
           monsters.removeAt(i);
-          escapedMonsters++; // 성에 도달한 몬스터 (처치 실패)
+          escapedMonsters++;
           continue;
         } else {
-          // 성에서 벗어나면 공격 상태 해제
           m.attackingCastle = false;
           m.castleAttackTimer = 0.0;
         }
 
-        final dir = dx == 0 ? 0.0 : dx.sign;
-        m.pos.x += dir * monsterWalkSpeed * dt;
-        m.pos.x = m.pos.x.clamp(monsterRadius, size.x - monsterRadius);
+        // 리디자인: 2D 직선 이동, 타입별 속도
+        if (dist > 0) {
+          final speed = m.type == MonsterType.boss
+              ? _bossSpeed
+              : m.type == MonsterType.miniBoss
+                  ? _miniBossSpeed
+                  : _normalMonsterSpeed;
+          m.pos.x += (dx / dist) * speed * dt;
+          m.pos.y += (dy / dist) * speed * dt;
+        }
       }
     }
   }
@@ -746,6 +764,23 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     }
   }
 
+  // 리디자인: 4방향 스폰 (화면 외곽 20px 위치에서 랜덤 스폰)
+  Vector2 _randomEdgeSpawnPos() {
+    final side = _random.nextInt(4); // 0=위, 1=아래, 2=왼쪽, 3=오른쪽
+    switch (side) {
+      case 0: // 위
+        return Vector2(_random.nextDouble() * size.x, -monsterRadius * 2);
+      case 1: // 아래
+        return Vector2(_random.nextDouble() * size.x, size.y + monsterRadius * 2);
+      case 2: // 왼쪽
+        return Vector2(-monsterRadius * 2, _random.nextDouble() * size.y);
+      case 3: // 오른쪽
+        return Vector2(size.x + monsterRadius * 2, _random.nextDouble() * size.y);
+      default:
+        return Vector2(_random.nextDouble() * size.x, -monsterRadius * 2);
+    }
+  }
+
   void _spawnMonster() {
     if (size.x <= 0 || size.y <= 0) return;
 
@@ -756,24 +791,21 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
     final roundCfg = cfg.rounds[currentRound - 1];
 
-    final x =
-        monsterRadius + _random.nextDouble() * (size.x - monsterRadius * 2);
-    final y = -monsterRadius * 2;
+    // 리디자인: 4방향 랜덤 스폰
+    final spawnPos = _randomEdgeSpawnPos();
 
-    // 일반 몬스터 스폰 (보스 라운드에서도 일반 몬스터 타입으로)
     monsters.add(
       _Monster(
-        pos: Vector2(x, y),
+        pos: spawnPos,
         hp: monsterMaxHp,
         maxHp: monsterMaxHp,
-        falling: true,
-        walking: false,
-        type: MonsterType.normal, // 항상 일반 몬스터로 스폰
+        walking: true,
+        type: MonsterType.normal,
       ),
     );
     spawnedMonsters++;
 
-    // 모든 일반 몬스터를 스폰했고, 보스 라운드이며, 아직 보스가 스폰되지 않았다면
+    // 모든 일반 몬스터 스폰 후, 보스 라운드라면 보스 스폰
     if (spawnedMonsters >= totalMonstersInRound &&
         !bossSpawned &&
         (roundCfg.monsterType == MonsterType.boss || roundCfg.monsterType == MonsterType.miniBoss)) {
@@ -784,8 +816,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   void _spawnBoss(MonsterType bossType) {
     if (size.x <= 0 || size.y <= 0 || bossSpawned) return;
 
-    final x = size.x / 2; // 보스는 화면 중앙에서 스폰
-    final y = -monsterRadius * 4;
+    // 리디자인: 보스도 4방향 랜덤 스폰
+    final spawnPos = _randomEdgeSpawnPos();
 
     // 보스 HP 결정
     int bossHp;
@@ -797,17 +829,15 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
     monsters.add(
       _Monster(
-        pos: Vector2(x, y),
+        pos: spawnPos,
         hp: bossHp,
         maxHp: bossHp,
-        falling: true,
-        walking: false,
+        walking: true,
         type: bossType,
       ),
     );
 
     bossSpawned = true;
-    // 보스도 카운트에 포함 (총 몬스터 수 +1)
     totalMonstersInRound++;
   }
 
@@ -865,10 +895,15 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         unit.attackCooldown -= dt * attackSpeedBuff;
       }
 
-      // 타겟 찾기 및 행동 결정
+      // 리디자인 B-1-7/B-1-8: 타워와 메인캐릭터의 타겟 우선도 분리
       if (unit.targetMonster == null || !monsters.contains(unit.targetMonster)) {
-        // 새로운 타겟 찾기 (가장 가까운 몬스터)
-        unit.targetMonster = _findNearestMonster(unit.pos);
+        if (unit.isTower) {
+          // 타워: 성에 가장 가까운 적 우선 (B-1-8)
+          unit.targetMonster = _findMonsterNearestToCastle();
+        } else {
+          // 메인 캐릭터: 자신에게 가장 가까운 적 우선 (B-1-8)
+          unit.targetMonster = _findNearestMonster(unit.pos);
+        }
         unit.movingTowardsTarget = false;
       }
 
@@ -902,20 +937,25 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
             break;
 
           case RoleType.priest:
-            // 성직자: 원거리 공격 (1 데미지, 증가된 사거리, 느린 공격속도) + 버프는 위에서 이미 적용됨
+            // 성직자: 원거리 공격 (1 데미지, 증가된 사거리, 느린 공격속도)
             _handleRangedUnit(unit, target, distance, dt, 1.0, priestRange, 1.5, moveSpeedBuff);
             break;
 
           case RoleType.utility:
-            // 유틸리티: 원거리 투사물 공격 (1 데미지, 기본 사거리, 기본 공격속도)
+            // 유틸리티: 원거리 투사물 공격
             _handleRangedUnit(unit, target, distance, dt, 1.0, rangedRange, 2.0, moveSpeedBuff);
             break;
+        }
+
+        // 리디자인 B-1-7: 타워 유닛은 고정 위치로 복원 (핸들러가 이동시키므로)
+        if (unit.isTower && unit.towerFixedPos != null) {
+          unit.pos.setFrom(unit.towerFixedPos!);
         }
       }
     }
   }
 
-  // 가장 가까운 몬스터 찾기
+  // 가장 가까운 몬스터 찾기 (메인 캐릭터용)
   _Monster? _findNearestMonster(Vector2 pos) {
     if (monsters.isEmpty) return null;
 
@@ -924,6 +964,26 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
     for (final monster in monsters) {
       final dist = (monster.pos - pos).length;
+      if (dist < minDist) {
+        minDist = dist;
+        nearest = monster;
+      }
+    }
+
+    return nearest;
+  }
+
+  // 리디자인 B-1-8: 성에 가장 가까운 몬스터 찾기 (타워용)
+  _Monster? _findMonsterNearestToCastle() {
+    if (monsters.isEmpty) return null;
+
+    _Monster? nearest;
+    double minDist = double.infinity;
+
+    for (final monster in monsters) {
+      final dx = monster.pos.x - castleCenterX;
+      final dy = monster.pos.y - castleCenterY;
+      final dist = sqrt(dx * dx + dy * dy);
       if (dist < minDist) {
         minDist = dist;
         nearest = monster;
@@ -1786,7 +1846,15 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   void _spawnCharacterUnits() {
     characterUnits.clear(); // 기존 유닛 제거
 
-    for (int i = 0; i < 4; i++) {
+    // 리디자인: 타워 고정 위치 (성 중심 ±70px 대각선 4곳)
+    const towerOffsets = [
+      [-70.0, -70.0], // T1: 왼쪽 위
+      [ 70.0, -70.0], // T2: 오른쪽 위
+      [-70.0,  70.0], // T3: 왼쪽 아래
+      [ 70.0,  70.0], // T4: 오른쪽 아래
+    ];
+
+    for (int i = 0; i < 5; i++) {
       final instanceId = partySlots[i];
       if (instanceId != null) {
         final character = ownedCharacters.firstWhere(
@@ -1798,17 +1866,30 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
           final definition = CharacterDefinitions.byId(character.characterId);
           final maxHp = definition.baseStats.maxHp * (1 + character.level * 0.1);
 
-          // 캐릭터 생성 위치 (성 위쪽, 슬롯에 따라 분산)
-          final startX = 60.0 + (i * 80.0); // 각 캐릭터 간격
-          final startY = size.y - castleHeight - 120.0; // 성 위쪽
+          final bool isTower = i > 0;
+          Vector2 spawnPos;
+          Vector2? fixedPos;
+
+          if (isTower) {
+            // 타워: 성 중심에서 ±70px 대각선 고정 위치
+            final offset = towerOffsets[i - 1];
+            spawnPos = Vector2(castleCenterX + offset[0], castleCenterY + offset[1]);
+            fixedPos = spawnPos.clone();
+          } else {
+            // 메인 캐릭터: 성 오른쪽 옆에서 시작
+            spawnPos = Vector2(castleCenterX + 60.0, castleCenterY);
+            fixedPos = null;
+          }
 
           final unit = _CharacterUnit(
             instanceId: instanceId,
             definition: definition,
             level: character.level,
-            pos: Vector2(startX, startY),
+            pos: spawnPos,
             currentHp: maxHp,
             maxHp: maxHp,
+            isTower: isTower,
+            towerFixedPos: fixedPos,
           );
 
           characterUnits.add(unit);
@@ -1819,7 +1900,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
   // 파티 슬롯 설정을 게임 캐릭터 슬롯에 반영
   void _applyPartyToCharacterSlots() {
-    for (int i = 0; i < 4; i++) {
+    // 리디자인: 5슬롯 (0=메인, 1-4=타워)
+    for (int i = 0; i < 5; i++) {
       if (i >= characterSlots.length) break;
 
       final instanceId = partySlots[i];
@@ -2241,8 +2323,12 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     _renderLoadingOverlay(canvas);
   }
 
-  Rect get _castleRect =>
-      Rect.fromLTWH(0, size.y - castleHeight, size.x, castleHeight);
+  // 리디자인: 성을 화면 중앙 80×80px 정사각형으로 변경
+  Rect get _castleRect => Rect.fromCenter(
+    center: Offset(size.x / 2, size.y / 2),
+    width: castleHeight,
+    height: castleHeight,
+  );
 
   void _renderCastle(Canvas canvas) {
     final castlePaint = Paint()..color = const Color(0xFF424242);
