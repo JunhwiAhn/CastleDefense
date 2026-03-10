@@ -2289,9 +2289,10 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     _renderStageProgress(canvas);
     _renderWeaponInfo(canvas);
 
-    // 플레이 중에만 일시정지 버튼 표시
+    // 플레이 중에만 일시정지 버튼 + 버추얼 스틱 표시
     if (gameState == GameState.playing) {
       _renderPauseButton(canvas);
+      _renderVirtualStick(canvas); // D-1-3: 버추얼 스틱 UI
     }
 
     _renderGameStateOverlay(canvas);
@@ -2330,42 +2331,107 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     height: castleHeight,
   );
 
+  // D-4-1: 새 디자인 — 화면 중앙 80×80px 성 스프라이트 (HP 3단계 시각 변화)
   void _renderCastle(Canvas canvas) {
-    final castlePaint = Paint()..color = const Color(0xFF424242);
-    canvas.drawRect(_castleRect, castlePaint);
+    final double cx = castleCenterX;
+    final double cy = castleCenterY;
 
-    // 캐릭터 슬롯 렌더링 (성 위에 배치)
-    _renderCharacterSlots(canvas);
+    // HP 비율에 따른 3단계 색상
+    final double hpRatio =
+        castleMaxHp == 0 ? 0 : (castleHp / castleMaxHp).clamp(0.0, 1.0);
+    final Color castleBaseColor;
+    final Color castleRoofColor;
+    if (hpRatio > 0.66) {
+      castleBaseColor = const Color(0xFF546E7A); // 양호: 블루그레이
+      castleRoofColor = const Color(0xFF37474F);
+    } else if (hpRatio > 0.33) {
+      castleBaseColor = const Color(0xFF6D4C41); // 손상: 갈색
+      castleRoofColor = const Color(0xFF4E342E);
+    } else {
+      castleBaseColor = const Color(0xFF7B3535); // 위기: 어두운 빨강
+      castleRoofColor = const Color(0xFF5D2626);
+    }
 
-    const double hpBarHeight = 8.0;
-    const double hpBarMargin = 4.0;
-    final double hpRatio = castleMaxHp == 0 ? 0 : castleHp / castleMaxHp;
-
-    final hpBarWidth = size.x * 0.6;
-    final hpBarX = (size.x - hpBarWidth) / 2;
-    final hpBarY = _castleRect.top - hpBarHeight - hpBarMargin;
-
-    final hpBgPaint = Paint()..color = const Color(0xFF555555);
-    final hpFgPaint = Paint()..color = const Color(0xFF66BB6A);
-
-    final bgRect = Rect.fromLTWH(hpBarX, hpBarY, hpBarWidth, hpBarHeight);
-    canvas.drawRect(bgRect, hpBgPaint);
-
-    final fgRect = Rect.fromLTWH(
-      hpBarX,
-      hpBarY,
-      hpBarWidth * hpRatio.clamp(0.0, 1.0),
-      hpBarHeight,
+    // 성 본체 (둥근 모서리)
+    final castleBodyPaint = Paint()..color = castleBaseColor;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(_castleRect, const Radius.circular(6)),
+      castleBodyPaint,
     );
-    canvas.drawRect(fgRect, hpFgPaint);
 
-    _drawCenteredText(
-      canvas,
-      'Castle HP: $castleHp / $castleMaxHp',
-      Offset(size.x / 2, hpBarY - 14),
-      fontSize: 14,
-      color: const Color(0xFFFFFFFF),
+    // 성문 (하단 중앙 아치형)
+    const double gateW = 20.0;
+    const double gateH = 26.0;
+    final gatePaint = Paint()..color = const Color(0xFF1A1A1A);
+    canvas.drawRRect(
+      RRect.fromRectAndCorners(
+        Rect.fromLTWH(cx - gateW / 2, _castleRect.bottom - gateH, gateW, gateH),
+        topLeft: const Radius.circular(10),
+        topRight: const Radius.circular(10),
+      ),
+      gatePaint,
     );
+
+    // 흉벽 (상단 4개 돌출부)
+    final crenelPaint = Paint()..color = castleRoofColor;
+    for (final xPos in [
+      _castleRect.left + 4.0,
+      _castleRect.left + 18.0,
+      _castleRect.right - 28.0,
+      _castleRect.right - 12.0,
+    ]) {
+      canvas.drawRect(
+        Rect.fromLTWH(xPos, _castleRect.top - 9, 8, 11),
+        crenelPaint,
+      );
+    }
+
+    // 창문 (좌우, 황금색 반투명)
+    final windowPaint = Paint()
+      ..color = const Color(0xFFFFD54F).withValues(alpha: 0.6);
+    for (final wc in [Offset(cx - 18, cy - 10), Offset(cx + 18, cy - 10)]) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: wc, width: 10, height: 12),
+          const Radius.circular(5),
+        ),
+        windowPaint,
+      );
+    }
+
+    // 외곽 테두리
+    final borderPaint = Paint()
+      ..color = const Color(0x88FFFFFF)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(_castleRect, const Radius.circular(6)),
+      borderPaint,
+    );
+
+    // 위기 상태 균열
+    if (hpRatio <= 0.33 && castleHp > 0) {
+      final crackPaint = Paint()
+        ..color = const Color(0xAAFF5252)
+        ..strokeWidth = 1.5
+        ..style = PaintingStyle.stroke;
+      canvas.drawLine(
+        Offset(cx - 15, _castleRect.top + 10),
+        Offset(cx - 5, _castleRect.top + 30),
+        crackPaint,
+      );
+      canvas.drawLine(
+        Offset(cx + 10, _castleRect.top + 15),
+        Offset(cx + 20, _castleRect.top + 35),
+        crackPaint,
+      );
+    }
+
+    // 타워 슬롯 렌더링 (D-4-2)
+    _renderTowerSlots(canvas);
+
+    // 성 HP 바 렌더링 (D-1-2)
+    _renderCastleHP(canvas);
   }
 
   // 캐릭터 슬롯 렌더링
@@ -5138,5 +5204,214 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     }
 
     tp.paint(canvas, drawOffset);
+  }
+
+  // ============================================================
+  // D-1-3: 버추얼 스틱 UI (화면 좌측 하단, 외경 60px, 노브 25px)
+  // ============================================================
+  void _renderVirtualStick(Canvas canvas) {
+    const double outerRadius = 60.0;
+    const double knobRadius = 25.0;
+    const double marginLeft = 80.0;
+    const double marginBottom = 110.0;
+    final Offset baseCenter = Offset(marginLeft, size.y - marginBottom);
+
+    // 외부 링 (반투명 흰색 채우기)
+    final outerFillPaint = Paint()..color = const Color(0x22FFFFFF);
+    canvas.drawCircle(baseCenter, outerRadius, outerFillPaint);
+
+    // 외부 링 테두리
+    final outerBorderPaint = Paint()
+      ..color = const Color(0x88FFFFFF)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+    canvas.drawCircle(baseCenter, outerRadius, outerBorderPaint);
+
+    // 십자 가이드 선
+    final guidePaint = Paint()
+      ..color = const Color(0x33FFFFFF)
+      ..strokeWidth = 1.0;
+    canvas.drawLine(
+      Offset(baseCenter.dx - outerRadius + 10, baseCenter.dy),
+      Offset(baseCenter.dx + outerRadius - 10, baseCenter.dy),
+      guidePaint,
+    );
+    canvas.drawLine(
+      Offset(baseCenter.dx, baseCenter.dy - outerRadius + 10),
+      Offset(baseCenter.dx, baseCenter.dy + outerRadius - 10),
+      guidePaint,
+    );
+
+    // 노브 (반투명 흰색)
+    final knobFillPaint = Paint()..color = const Color(0xAAFFFFFF);
+    canvas.drawCircle(baseCenter, knobRadius, knobFillPaint);
+
+    // 노브 테두리
+    final knobBorderPaint = Paint()
+      ..color = const Color(0xFFFFFFFF)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+    canvas.drawCircle(baseCenter, knobRadius, knobBorderPaint);
+
+    // 노브 중앙 점
+    final knobDotPaint = Paint()..color = const Color(0x88333333);
+    canvas.drawCircle(baseCenter, 5.0, knobDotPaint);
+  }
+
+  // ============================================================
+  // D-4-2: 타워 슬롯 프레임 (성 중심 ±70px 대각선 4곳)
+  // ============================================================
+  void _renderTowerSlots(Canvas canvas) {
+    const double slotSize = 40.0;
+    final double cx = size.x / 2;
+    final double cy = size.y / 2;
+    const double towerOffset = 70.0;
+
+    // T1~T4 슬롯 중심 좌표
+    final List<Offset> slotCenters = [
+      Offset(cx - towerOffset, cy - towerOffset), // T1: 좌상
+      Offset(cx + towerOffset, cy - towerOffset), // T2: 우상
+      Offset(cx - towerOffset, cy + towerOffset), // T3: 좌하
+      Offset(cx + towerOffset, cy + towerOffset), // T4: 우하
+    ];
+
+    for (int i = 0; i < slotCenters.length; i++) {
+      final center = slotCenters[i];
+      final Rect slotRect =
+          Rect.fromCenter(center: center, width: slotSize, height: slotSize);
+
+      // partySlots 인덱스: 0=메인, 1~4=타워
+      final int towerSlotIndex = i + 1;
+      final bool hasTower = towerSlotIndex < partySlots.length &&
+          partySlots[towerSlotIndex] != null;
+
+      if (hasTower) {
+        // 배치된 타워: 랭크 색상 배경 + 역할 이모지
+        final instanceId = partySlots[towerSlotIndex]!;
+        final character = ownedCharacters.firstWhere(
+          (c) => c.instanceId == instanceId,
+          orElse: () => ownedCharacters.isNotEmpty
+              ? ownedCharacters.first
+              : OwnedCharacter(instanceId: '', characterId: ''),
+        );
+
+        if (character.characterId.isNotEmpty) {
+          final definition = CharacterDefinitions.byId(character.characterId);
+
+          // 랭크 색상 반투명 배경
+          final bgPaint = Paint()
+            ..color = Color(definition.rank.color).withValues(alpha: 0.35);
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(slotRect, const Radius.circular(6)),
+            bgPaint,
+          );
+
+          // 스킬 준비 여부에 따른 테두리 색상
+          final bool skillReady = towerSlotIndex < characterSlots.length &&
+              characterSlots[towerSlotIndex].skillReady;
+          final borderPaint = Paint()
+            ..color = skillReady
+                ? const Color(0xFF00E676)
+                : Color(definition.rank.color)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.0;
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(slotRect, const Radius.circular(6)),
+            borderPaint,
+          );
+
+          // 역할 이모지
+          _drawCenteredText(canvas, definition.role.emoji, center, fontSize: 22);
+
+          // 스킬 준비 표시
+          if (skillReady) {
+            _drawCenteredText(
+              canvas,
+              '✨',
+              Offset(slotRect.right - 8, slotRect.top + 8),
+              fontSize: 10,
+            );
+          }
+        }
+      } else {
+        // 빈 슬롯: 반투명 배경 + 점선 프레임 + 슬롯 번호
+        final emptyBgPaint = Paint()..color = const Color(0x22FFFFFF);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(slotRect, const Radius.circular(6)),
+          emptyBgPaint,
+        );
+
+        final dashBorderPaint = Paint()
+          ..color = const Color(0x66FFFFFF)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5;
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(slotRect, const Radius.circular(6)),
+          dashBorderPaint,
+        );
+
+        // 슬롯 번호
+        _drawCenteredText(
+          canvas,
+          'T${i + 1}',
+          center,
+          fontSize: 13,
+          color: const Color(0x99FFFFFF),
+        );
+      }
+    }
+  }
+
+  // ============================================================
+  // D-1-2: 성 HP 바 (성 스프라이트 바로 위, 80×6px, 녹→황→적)
+  // ============================================================
+  void _renderCastleHP(Canvas canvas) {
+    const double barWidth = 80.0;
+    const double barHeight = 6.0;
+    const double barMargin = 6.0;
+    final double cx = size.x / 2;
+    final double castleTop = size.y / 2 - 40.0; // 80px 높이의 절반
+    final double hpRatio =
+        castleMaxHp == 0 ? 0 : (castleHp / castleMaxHp).clamp(0.0, 1.0);
+    final double barX = cx - barWidth / 2;
+    final double barY = castleTop - barHeight - barMargin;
+
+    // 배경 바
+    final bgPaint = Paint()..color = const Color(0xFF333333);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(barX, barY, barWidth, barHeight),
+        const Radius.circular(3),
+      ),
+      bgPaint,
+    );
+
+    // HP 색상: hpGreen → hpYellow → hpRed
+    final Color barColor;
+    if (hpRatio > 0.66) {
+      barColor = const Color(0xFF4CAF50);
+    } else if (hpRatio > 0.33) {
+      barColor = const Color(0xFFFFEB3B);
+    } else {
+      barColor = const Color(0xFFF44336);
+    }
+
+    final fgPaint = Paint()..color = barColor;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(barX, barY, barWidth * hpRatio, barHeight),
+        const Radius.circular(3),
+      ),
+      fgPaint,
+    );
+
+    // HP 수치 텍스트
+    _drawCenteredText(
+      canvas,
+      '🏰 $castleHp / $castleMaxHp',
+      Offset(cx, barY - 10),
+      fontSize: 11,
+      color: const Color(0xFFFFFFFF),
+    );
   }
 }
