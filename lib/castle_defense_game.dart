@@ -42,6 +42,8 @@ class RoundConfig {
   final int monsterMaxHp;
   final double spawnInterval;
   final MonsterType monsterType;
+  // 리디자인 B-2-17: 미니보스 수 (라운드 내 스폰할 미니보스 수)
+  final int miniBossCount;
 
   const RoundConfig({
     required this.roundNumber,
@@ -49,6 +51,7 @@ class RoundConfig {
     required this.monsterMaxHp,
     required this.spawnInterval,
     this.monsterType = MonsterType.normal,
+    this.miniBossCount = 0,
   });
 }
 
@@ -62,95 +65,122 @@ class StageConfig {
   });
 }
 
-// 헬퍼 함수: 일반 라운드 생성
+// 리디자인 B-2-17: P-2-2 라운드 테이블 기반 스테이지 설정
+// Stage 1 = Global R1~R10, Stage 2 = Global R11~R20
 List<RoundConfig> _createStageRounds(int stageLevel) {
   final rounds = <RoundConfig>[];
-
+  final int globalOffset = (stageLevel - 1) * 10;
   for (int i = 1; i <= 10; i++) {
-    // 모든 라운드는 일반 몬스터 수 계산 적용
-    // 보스/미니보스 라운드도 일반 몬스터가 나오고, 추가로 보스가 나옴
-    rounds.add(RoundConfig(
-      roundNumber: i,
-      totalMonsters: _getRoundMonsterCount(stageLevel, i),
-      monsterMaxHp: _getNormalMonsterHp(stageLevel),
-      spawnInterval: _getSpawnInterval(stageLevel),
-      monsterType: i == 10 ? MonsterType.boss : i == 5 ? MonsterType.miniBoss : MonsterType.normal,
-    ));
+    rounds.add(_buildRoundConfig(i, globalOffset + i));
   }
-
   return rounds;
 }
 
-// 스테이지별 일반 몬스터 수 (모든 라운드에 적용)
-int _getRoundMonsterCount(int stageLevel, int roundNumber) {
-  // 스테이지별 시작 몬스터 수와 라운드당 증가량
-  int baseCount;
-  int incrementPerRound;
-
-  switch (stageLevel) {
-    case 1:
-      baseCount = 6; // 라운드 1 시작
-      incrementPerRound = 4; // 라운드마다 4씩 증가
-      break;
-    case 2:
-      baseCount = 22; // 라운드 1 시작
-      incrementPerRound = 6; // 라운드마다 6씩 증가
-      break;
-    case 3:
-      baseCount = 40; // 라운드 1 시작
-      incrementPerRound = 8; // 라운드마다 8씩 증가
-      break;
-    case 4:
-      baseCount = 60; // 라운드 1 시작
-      incrementPerRound = 10; // 라운드마다 10씩 증가
-      break;
-    case 5:
-      baseCount = 85; // 라운드 1 시작
-      incrementPerRound = 12; // 라운드마다 12씩 증가
-      break;
-    default:
-      baseCount = 100;
-      incrementPerRound = 15;
-      break;
+// P-2-2 테이블에서 글로벌 라운드 번호로 라운드 설정 생성
+RoundConfig _buildRoundConfig(int roundNumber, int globalR) {
+  // P-2-3: 글로벌 라운드별 HP 스케일링
+  int normalHp;
+  if (globalR <= 5) {
+    normalHp = 5;
+  } else if (globalR <= 10) {
+    normalHp = 7;
+  } else if (globalR <= 15) {
+    normalHp = 10;
+  } else if (globalR <= 20) {
+    normalHp = 13;
+  } else {
+    normalHp = 13 + 2 * (globalR - 20);
   }
 
-  return baseCount + ((roundNumber - 1) * incrementPerRound);
+  // P-2-2 테이블: 라운드별 일반 몬스터 수, 스폰 간격, 미니보스 수, 보스 여부
+  int normalCount;
+  double spawnInterval;
+  int miniBossCount;
+  bool isBossRound;
+
+  if (globalR == 1) {
+    normalCount = 8; spawnInterval = 2.0; miniBossCount = 0; isBossRound = false;
+  } else if (globalR == 2) {
+    normalCount = 12; spawnInterval = 1.8; miniBossCount = 0; isBossRound = false;
+  } else if (globalR == 3) {
+    normalCount = 15; spawnInterval = 1.5; miniBossCount = 1; isBossRound = false;
+  } else if (globalR == 4) {
+    normalCount = 18; spawnInterval = 1.3; miniBossCount = 1; isBossRound = false;
+  } else if (globalR == 5) {
+    normalCount = 20; spawnInterval = 1.0; miniBossCount = 0; isBossRound = true;
+  } else if (globalR == 6) {
+    normalCount = 23; spawnInterval = 0.9; miniBossCount = 1; isBossRound = false;
+  } else if (globalR == 7) {
+    normalCount = 26; spawnInterval = 0.8; miniBossCount = 1; isBossRound = false;
+  } else if (globalR == 8) {
+    normalCount = 29; spawnInterval = 0.7; miniBossCount = 2; isBossRound = false;
+  } else if (globalR == 9) {
+    normalCount = 32; spawnInterval = 0.6; miniBossCount = 2; isBossRound = false;
+  } else if (globalR == 10) {
+    normalCount = 35; spawnInterval = 0.5; miniBossCount = 0; isBossRound = true;
+  } else if (globalR == 11) {
+    normalCount = 38; spawnInterval = 0.5; miniBossCount = 2; isBossRound = false;
+  } else if (globalR == 12) {
+    normalCount = 41; spawnInterval = 0.5; miniBossCount = 2; isBossRound = false;
+  } else if (globalR == 13) {
+    normalCount = 44; spawnInterval = 0.5; miniBossCount = 3; isBossRound = false;
+  } else if (globalR == 14) {
+    normalCount = 47; spawnInterval = 0.5; miniBossCount = 3; isBossRound = false;
+  } else if (globalR == 15) {
+    normalCount = 50; spawnInterval = 0.5; miniBossCount = 0; isBossRound = true;
+  } else if (globalR == 16) {
+    normalCount = 53; spawnInterval = 0.5; miniBossCount = 3; isBossRound = false;
+  } else if (globalR == 17) {
+    normalCount = 56; spawnInterval = 0.5; miniBossCount = 3; isBossRound = false;
+  } else if (globalR == 18) {
+    normalCount = 59; spawnInterval = 0.5; miniBossCount = 4; isBossRound = false;
+  } else if (globalR == 19) {
+    normalCount = 62; spawnInterval = 0.5; miniBossCount = 4; isBossRound = false;
+  } else if (globalR == 20) {
+    normalCount = 65; spawnInterval = 0.5; miniBossCount = 0; isBossRound = true;
+  } else {
+    // R21+: 매 라운드 +3 일반, 4 미니보스 상한, 5라운드마다 보스
+    normalCount = 65 + 3 * (globalR - 20);
+    spawnInterval = 0.5;
+    miniBossCount = 4;
+    isBossRound = (globalR % 5 == 0);
+  }
+
+  final MonsterType roundType = isBossRound
+      ? MonsterType.boss
+      : (miniBossCount > 0 ? MonsterType.miniBoss : MonsterType.normal);
+
+  return RoundConfig(
+    roundNumber: roundNumber,
+    totalMonsters: normalCount,
+    monsterMaxHp: normalHp,
+    spawnInterval: spawnInterval,
+    monsterType: roundType,
+    miniBossCount: isBossRound ? 0 : miniBossCount,
+  );
 }
 
-// 스테이지별 일반 몬스터 HP
-int _getNormalMonsterHp(int stageLevel) {
-  return 1 + stageLevel;
-}
-
-// 스테이지별 부보스 HP
+// 스테이지별 미니보스 HP (글로벌 라운드 기반 HP 계산)
 int _getMiniBossHp(int stageLevel) {
-  return 10 + (stageLevel * 5);
+  final int midR = (stageLevel - 1) * 10 + 5;
+  if (midR <= 5) return 40;
+  if (midR <= 10) return 55;
+  if (midR <= 15) return 75;
+  if (midR <= 20) return 100;
+  return 100 + 10 * (midR - 20);
 }
 
 // 스테이지별 보스 HP
 int _getBossHp(int stageLevel) {
-  return 20 + (stageLevel * 10);
+  final int midR = (stageLevel - 1) * 10 + 5;
+  if (midR <= 5) return 200;
+  if (midR <= 10) return 250;
+  if (midR <= 15) return 320;
+  if (midR <= 20) return 400;
+  return 400 + 30 * (midR - 20);
 }
 
-// 스테이지별 스폰 간격
-double _getSpawnInterval(int stageLevel) {
-  switch (stageLevel) {
-    case 1:
-      return 1.0;
-    case 2:
-      return 0.8;
-    case 3:
-      return 0.7;
-    case 4:
-      return 0.6;
-    case 5:
-      return 0.5;
-    default:
-      return 0.5;
-  }
-}
-
-// 스테이지별 설정 (5개 스테이지, 각 10라운드)
+// 리디자인 B-2-17: P-2-2 기반 스테이지 설정 맵
 final Map<int, StageConfig> kStageConfigs = {
   1: StageConfig(stageLevel: 1, rounds: _createStageRounds(1)),
   2: StageConfig(stageLevel: 2, rounds: _createStageRounds(2)),
@@ -355,6 +385,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   double spawnTimer = 0.0;
 
   bool bossSpawned = false; // 보스/미니보스가 이미 스폰되었는지 여부
+  // 리디자인 B-2-17: 미니보스 스폰 카운터
+  int miniBossesSpawned = 0;
 
   // 라운드 시간 제한
   double roundTimer = 0.0; // 현재 라운드 경과 시간
@@ -417,6 +449,10 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   String playerNickname = 'Player';
   int playerLevel = 1;
   int playerGold = 1000;
+  // 리디자인 B-2-10: 인게임 캐릭터 XP / 레벨
+  int playerXp = 0;
+  int playerCharLevel = 1;
+  bool _pendingLevelUp = false; // 레벨업 대기 (버프 카드 표시 트리거)
   int playerGem = 500; // 뽑기 테스트용으로 많이 줌
   int playerEnergy = 50;
   int playerMaxEnergy = 50;
@@ -474,6 +510,24 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   Image? goblinImage;
   bool goblinImageLoaded = false;
 
+  // D-4-1: 성 스프라이트
+  Image? castleImage;
+  bool castleImageLoaded = false;
+
+  // D-3-2: XP 젬 스프라이트
+  Image? xpGemImage;
+  bool xpGemImageLoaded = false;
+
+  // D-3-3: 골드 코인 스프라이트
+  Image? goldCoinImage;
+  bool goldCoinImageLoaded = false;
+
+  // D-4-3: 보스/미니보스 스프라이트
+  Image? bossMonsterImage;
+  bool bossMonsterImageLoaded = false;
+  Image? minibossMonsterImage;
+  bool minibossMonsterImageLoaded = false;
+
   // 캐릭터 설정
   final double characterUnitRadius = 12.0; // 캐릭터 크기
   final double projectileSpeed = 200.0; // 투사물 속도
@@ -500,8 +554,14 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     gameState = GameState.loading; // GameScreen 진입 즉시 로딩부터 시작
     _loadingTimer = 0.0;
 
-    // Goblinスプライトをロード
-    await _loadGoblinSprite();
+    // 스프라이트 전체 로드
+    await Future.wait([
+      _loadGoblinSprite(),
+      _loadCastleSprite(),
+      _loadXpGemSprite(),
+      _loadGoldCoinSprite(),
+      _loadBossSprites(),
+    ]);
   }
 
   // Goblinスプライトをロード
@@ -511,6 +571,52 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       goblinImageLoaded = true;
     } catch (e) {
       goblinImageLoaded = false;
+    }
+  }
+
+  // D-4-1: 성 스프라이트 로드
+  Future<void> _loadCastleSprite() async {
+    try {
+      castleImage = await images.load('castle.png');
+      castleImageLoaded = true;
+    } catch (e) {
+      castleImageLoaded = false;
+    }
+  }
+
+  // D-3-2: XP 젬 스프라이트 로드
+  Future<void> _loadXpGemSprite() async {
+    try {
+      xpGemImage = await images.load('xp_gem.png');
+      xpGemImageLoaded = true;
+    } catch (e) {
+      xpGemImageLoaded = false;
+    }
+  }
+
+  // D-3-3: 골드 코인 스프라이트 로드
+  Future<void> _loadGoldCoinSprite() async {
+    try {
+      goldCoinImage = await images.load('gold_coin.png');
+      goldCoinImageLoaded = true;
+    } catch (e) {
+      goldCoinImageLoaded = false;
+    }
+  }
+
+  // D-4-3/D-4-4: 보스/미니보스 스프라이트 로드
+  Future<void> _loadBossSprites() async {
+    try {
+      bossMonsterImage = await images.load('boss_monster.png');
+      bossMonsterImageLoaded = true;
+    } catch (e) {
+      bossMonsterImageLoaded = false;
+    }
+    try {
+      minibossMonsterImage = await images.load('miniboss_monster.png');
+      minibossMonsterImageLoaded = true;
+    } catch (e) {
+      minibossMonsterImageLoaded = false;
     }
   }
 
@@ -540,6 +646,10 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
     castleHp = castleMaxHp;
     monsters.clear();
+    // 리디자인 B-2-10: 인게임 XP 초기화
+    playerXp = 0;
+    playerCharLevel = 1;
+    _pendingLevelUp = false;
 
     _loadRound(1); // 첫 번째 라운드 로딩
   }
@@ -560,6 +670,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     escapedMonsters = 0;
     spawnTimer = 0.0;
     bossSpawned = false;
+    miniBossesSpawned = 0; // 리디자인 B-2-17
 
     // 라운드 타입에 따라 시간 제한 설정
     roundTimer = 0.0;
@@ -874,16 +985,19 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     );
     spawnedMonsters++;
 
-    // 모든 일반 몬스터 스폰 후, 보스 라운드라면 보스 스폰
-    if (spawnedMonsters >= totalMonstersInRound &&
-        !bossSpawned &&
-        (roundCfg.monsterType == MonsterType.boss || roundCfg.monsterType == MonsterType.miniBoss)) {
-      _spawnBoss(roundCfg.monsterType);
+    // 리디자인 B-2-17: 모든 일반 몬스터 스폰 후 보스/미니보스 스폰
+    if (spawnedMonsters >= totalMonstersInRound) {
+      if (!bossSpawned && roundCfg.monsterType == MonsterType.boss) {
+        _spawnBoss(MonsterType.boss);
+      } else if (miniBossesSpawned < roundCfg.miniBossCount) {
+        _spawnBoss(MonsterType.miniBoss);
+      }
     }
   }
 
   void _spawnBoss(MonsterType bossType) {
-    if (size.x <= 0 || size.y <= 0 || bossSpawned) return;
+    if (size.x <= 0 || size.y <= 0) return;
+    if (bossType == MonsterType.boss && bossSpawned) return;
 
     // 리디자인: 보스도 4방향 랜덤 스폰
     final spawnPos = _randomEdgeSpawnPos();
@@ -906,7 +1020,11 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       ),
     );
 
-    bossSpawned = true;
+    if (bossType == MonsterType.boss) {
+      bossSpawned = true;
+    } else {
+      miniBossesSpawned++;
+    }
     totalMonstersInRound++;
   }
 
@@ -933,6 +1051,31 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         : mType == MonsterType.miniBoss ? 15.0 : 3.0;
     skillGauge = min(100.0, skillGauge + gaugeIncrease);
     if (skillGauge >= 100.0) skillReady = true;
+  }
+
+  // 리디자인 B-2-10: 다음 레벨에 필요한 XP (10 + Level * 5)
+  int _xpToNextLevel() => 10 + playerCharLevel * 5;
+
+  // 리디자인 B-2-10: 레벨업 체크 및 처리
+  void _checkLevelUp() {
+    while (playerXp >= _xpToNextLevel()) {
+      playerXp -= _xpToNextLevel();
+      playerCharLevel++;
+      _pendingLevelUp = true;
+      // TODO B-2-11: 버프 카드 UI 트리거 (Designer 담당)
+      // 현재는 레벨업 플래그만 설정, 게임은 계속 진행
+    }
+  }
+
+  // 리디자인 B-2-14: 필살기 발동 (스킬 게이지 100% 시 전체 화면 999 데미지)
+  void _fireUltimateSkill() {
+    if (!skillReady) return;
+    // 모든 몬스터에게 999 데미지 (즉사)
+    for (int i = monsters.length - 1; i >= 0; i--) {
+      _killMonsterAtIndex(i);
+    }
+    skillGauge = 0.0;
+    skillReady = false;
   }
 
   bool _isPointInsideMonster(_Monster m, Vector2 tapPos) {
@@ -1197,7 +1340,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       if (mainUnit != null) {
         final dist = (gem.pos - mainUnit.pos).length;
         if (dist <= collectRadius) {
-          // TODO B-2-10: xpValue 를 플레이어 XP에 가산
+          // 리디자인 B-2-10: XP 가산 및 레벨업 체크
+          playerXp += gem.xpValue;
+          _checkLevelUp();
           xpGems.removeAt(i);
           continue;
         }
@@ -2641,62 +2786,87 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       castleRoofColor = const Color(0xFF5D2626);
     }
 
-    // 성 본체 (둥근 모서리)
-    final castleBodyPaint = Paint()..color = castleBaseColor;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(_castleRect, const Radius.circular(6)),
-      castleBodyPaint,
-    );
-
-    // 성문 (하단 중앙 아치형)
-    const double gateW = 20.0;
-    const double gateH = 26.0;
-    final gatePaint = Paint()..color = const Color(0xFF1A1A1A);
-    canvas.drawRRect(
-      RRect.fromRectAndCorners(
-        Rect.fromLTWH(cx - gateW / 2, _castleRect.bottom - gateH, gateW, gateH),
-        topLeft: const Radius.circular(10),
-        topRight: const Radius.circular(10),
-      ),
-      gatePaint,
-    );
-
-    // 흉벽 (상단 4개 돌출부)
-    final crenelPaint = Paint()..color = castleRoofColor;
-    for (final xPos in [
-      _castleRect.left + 4.0,
-      _castleRect.left + 18.0,
-      _castleRect.right - 28.0,
-      _castleRect.right - 12.0,
-    ]) {
-      canvas.drawRect(
-        Rect.fromLTWH(xPos, _castleRect.top - 9, 8, 11),
-        crenelPaint,
+    if (castleImageLoaded && castleImage != null) {
+      // D-4-1: 참조 에셋 스프라이트로 성 렌더링
+      final srcRect = Rect.fromLTWH(
+        0, 0,
+        castleImage!.width.toDouble(),
+        castleImage!.height.toDouble(),
       );
-    }
-
-    // 창문 (좌우, 황금색 반투명)
-    final windowPaint = Paint()
-      ..color = const Color(0xFFFFD54F).withValues(alpha: 0.6);
-    for (final wc in [Offset(cx - 18, cy - 10), Offset(cx + 18, cy - 10)]) {
+      // HP 비율에 따른 색조 오버레이 알파
+      final double tintAlpha = hpRatio > 0.66
+          ? 0.0    // 양호: 틴트 없음
+          : hpRatio > 0.33
+              ? 0.2  // 손상: 갈색 틴트
+              : 0.4; // 위기: 빨간 틴트
+      canvas.drawImageRect(castleImage!, srcRect, _castleRect, Paint());
+      if (tintAlpha > 0) {
+        final tintColor = hpRatio > 0.33
+            ? Color.fromRGBO(109, 76, 65, tintAlpha)    // 갈색
+            : Color.fromRGBO(123, 53, 53, tintAlpha);   // 어두운 빨강
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(_castleRect, const Radius.circular(4)),
+          Paint()..color = tintColor,
+        );
+      }
+    } else {
+      // 폴백: Canvas 절차적 드로잉
+      final castleBodyPaint = Paint()..color = castleBaseColor;
       canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromCenter(center: wc, width: 10, height: 12),
-          const Radius.circular(5),
+        RRect.fromRectAndRadius(_castleRect, const Radius.circular(6)),
+        castleBodyPaint,
+      );
+
+      // 성문 (하단 중앙 아치형)
+      const double gateW = 20.0;
+      const double gateH = 26.0;
+      final gatePaint = Paint()..color = const Color(0xFF1A1A1A);
+      canvas.drawRRect(
+        RRect.fromRectAndCorners(
+          Rect.fromLTWH(cx - gateW / 2, _castleRect.bottom - gateH, gateW, gateH),
+          topLeft: const Radius.circular(10),
+          topRight: const Radius.circular(10),
         ),
-        windowPaint,
+        gatePaint,
+      );
+
+      // 흉벽 (상단 4개 돌출부)
+      final crenelPaint = Paint()..color = castleRoofColor;
+      for (final xPos in [
+        _castleRect.left + 4.0,
+        _castleRect.left + 18.0,
+        _castleRect.right - 28.0,
+        _castleRect.right - 12.0,
+      ]) {
+        canvas.drawRect(
+          Rect.fromLTWH(xPos, _castleRect.top - 9, 8, 11),
+          crenelPaint,
+        );
+      }
+
+      // 창문 (좌우, 황금색 반투명)
+      final windowPaint = Paint()
+        ..color = const Color(0xFFFFD54F).withValues(alpha: 0.6);
+      for (final wc in [Offset(cx - 18, cy - 10), Offset(cx + 18, cy - 10)]) {
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromCenter(center: wc, width: 10, height: 12),
+            const Radius.circular(5),
+          ),
+          windowPaint,
+        );
+      }
+
+      // 외곽 테두리
+      final borderPaint = Paint()
+        ..color = const Color(0x88FFFFFF)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(_castleRect, const Radius.circular(6)),
+        borderPaint,
       );
     }
-
-    // 외곽 테두리
-    final borderPaint = Paint()
-      ..color = const Color(0x88FFFFFF)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(_castleRect, const Radius.circular(6)),
-      borderPaint,
-    );
 
     // 위기 상태 균열
     if (hpRatio <= 0.33 && castleHp > 0) {
@@ -2907,13 +3077,31 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
           break;
       }
 
-      // 一般モンスター(Stage1)はGoblinスプライトを使用
+      // 몬스터 타입별 스프라이트 또는 폴백 드로잉
       if (m.type == MonsterType.normal && goblinImageLoaded && goblinImage != null && stageLevel == 1) {
+        // 일반 몬스터 (Stage1): Goblin 스프라이트
         _renderGoblinSprite(canvas, m, radius);
+      } else if (m.type == MonsterType.boss && bossMonsterImageLoaded && bossMonsterImage != null) {
+        // D-4-3: 보스 스프라이트
+        final srcRect = Rect.fromLTWH(0, 0, bossMonsterImage!.width.toDouble(), bossMonsterImage!.height.toDouble());
+        final dstRect = Rect.fromCenter(center: center, width: radius * 2.2, height: radius * 2.2);
+        final spritePaint = Paint()
+          ..color = m.damageFlashTimer > 0
+              ? const Color(0xFFFF5252)
+              : const Color(0xFFFFFFFF);
+        canvas.drawImageRect(bossMonsterImage!, srcRect, dstRect, spritePaint);
+      } else if (m.type == MonsterType.miniBoss && minibossMonsterImageLoaded && minibossMonsterImage != null) {
+        // D-4-4: 미니보스 스프라이트
+        final srcRect = Rect.fromLTWH(0, 0, minibossMonsterImage!.width.toDouble(), minibossMonsterImage!.height.toDouble());
+        final dstRect = Rect.fromCenter(center: center, width: radius * 2.2, height: radius * 2.2);
+        final spritePaint = Paint()
+          ..color = m.damageFlashTimer > 0
+              ? const Color(0xFFFF5252)
+              : const Color(0xFFFFFFFF);
+        canvas.drawImageRect(minibossMonsterImage!, srcRect, dstRect, spritePaint);
       } else {
-        // 데미지 플래시 효과
+        // 폴백: 원형 드로잉
         if (m.damageFlashTimer > 0) {
-          // 빨간색으로 점멸
           final flashPaint = Paint()..color = const Color(0xFFFF0000);
           canvas.drawCircle(center, radius, flashPaint);
         } else {
@@ -5823,18 +6011,21 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       ),
       xpBgPaint,
     );
-    // TODO: Engineer가 playerXp/xpToNextLevel 구현 후 연결
+    // 리디자인 B-2-10: XP 바 (실제 playerXp/playerCharLevel 연결)
+    final double xpRatio = _xpToNextLevel() > 0
+        ? (playerXp / _xpToNextLevel()).clamp(0.0, 1.0)
+        : 0.0;
     final xpFgPaint = Paint()..color = const Color(0xFF2196F3);
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromLTWH(xpBarX, row1Y, 0, barHeight), // 플레이스홀더
+        Rect.fromLTWH(xpBarX, row1Y, xpBarW * xpRatio, barHeight),
         const Radius.circular(3),
       ),
       xpFgPaint,
     );
     _drawText(
       canvas,
-      'XP',
+      'Lv.$playerCharLevel XP',
       Offset(xpBarX + 2, row1Y + 9),
       fontSize: 8,
       color: const Color(0xAAFFFFFF),
@@ -5934,35 +6125,46 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       final double gemAlpha =
           gem.isBlinking ? (0.4 + 0.6 * sin(gameTime * 8)).clamp(0.1, 1.0) : 1.0;
 
-      // 마름모 경로
-      final path = Path()
-        ..moveTo(cx, cy - gemSize)
-        ..lineTo(cx + gemSize * 0.6, cy)
-        ..lineTo(cx, cy + gemSize)
-        ..lineTo(cx - gemSize * 0.6, cy)
-        ..close();
-
-      // 채우기: xpGemBlue #1565C0
-      final fillPaint = Paint()
-        ..color = Color.fromRGBO(21, 101, 192, gemAlpha);
-      canvas.drawPath(path, fillPaint);
-
-      // 하이라이트 (좌상단 밝은 면)
-      final hlPath = Path()
-        ..moveTo(cx, cy - gemSize)
-        ..lineTo(cx + gemSize * 0.6, cy)
-        ..lineTo(cx, cy)
-        ..close();
-      final hlPaint = Paint()
-        ..color = Color.fromRGBO(100, 181, 246, gemAlpha * 0.7);
-      canvas.drawPath(hlPath, hlPaint);
-
-      // 테두리
-      final borderPaint = Paint()
-        ..color = Color.fromRGBO(33, 150, 243, gemAlpha)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.0;
-      canvas.drawPath(path, borderPaint);
+      if (xpGemImageLoaded && xpGemImage != null) {
+        // D-3-2: 참조 에셋 스프라이트로 XP 젬 렌더링
+        final srcRect = Rect.fromLTWH(
+          0, 0,
+          xpGemImage!.width.toDouble(),
+          xpGemImage!.height.toDouble(),
+        );
+        final dstRect = Rect.fromCenter(
+          center: Offset(cx, cy),
+          width: gemSize * 2.0,
+          height: gemSize * 2.0,
+        );
+        final spritePaint = Paint()
+          ..color = Color.fromRGBO(255, 255, 255, gemAlpha);
+        canvas.drawImageRect(xpGemImage!, srcRect, dstRect, spritePaint);
+      } else {
+        // 폴백: Canvas 절차적 드로잉
+        final path = Path()
+          ..moveTo(cx, cy - gemSize)
+          ..lineTo(cx + gemSize * 0.6, cy)
+          ..lineTo(cx, cy + gemSize)
+          ..lineTo(cx - gemSize * 0.6, cy)
+          ..close();
+        final fillPaint = Paint()
+          ..color = Color.fromRGBO(21, 101, 192, gemAlpha);
+        canvas.drawPath(path, fillPaint);
+        final hlPath = Path()
+          ..moveTo(cx, cy - gemSize)
+          ..lineTo(cx + gemSize * 0.6, cy)
+          ..lineTo(cx, cy)
+          ..close();
+        final hlPaint = Paint()
+          ..color = Color.fromRGBO(100, 181, 246, gemAlpha * 0.7);
+        canvas.drawPath(hlPath, hlPaint);
+        final borderPaint = Paint()
+          ..color = Color.fromRGBO(33, 150, 243, gemAlpha)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.0;
+        canvas.drawPath(path, borderPaint);
+      }
 
       // 고가치 젬 (10XP 이상) 수치 표시
       if (gem.xpValue >= 10) {
@@ -5987,20 +6189,31 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       final cx = gold.pos.x;
       final cy = gold.pos.y;
 
-      // 코인 본체
-      final coinPaint = Paint()..color = const Color(0xFFFFD700);
-      canvas.drawCircle(Offset(cx, cy), coinRadius, coinPaint);
-
-      // 좌상단 하이라이트
-      final hlPaint = Paint()..color = const Color(0xFFFFF9C4);
-      canvas.drawCircle(Offset(cx - 1.5, cy - 1.5), coinRadius * 0.4, hlPaint);
-
-      // 테두리
-      final borderPaint = Paint()
-        ..color = const Color(0xFFFF8F00)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.0;
-      canvas.drawCircle(Offset(cx, cy), coinRadius, borderPaint);
+      if (goldCoinImageLoaded && goldCoinImage != null) {
+        // D-3-3: 참조 에셋 스프라이트로 코인 렌더링
+        final srcRect = Rect.fromLTWH(
+          0, 0,
+          goldCoinImage!.width.toDouble(),
+          goldCoinImage!.height.toDouble(),
+        );
+        final dstRect = Rect.fromCenter(
+          center: Offset(cx, cy),
+          width: coinRadius * 2.5,
+          height: coinRadius * 2.5,
+        );
+        canvas.drawImageRect(goldCoinImage!, srcRect, dstRect, Paint());
+      } else {
+        // 폴백: Canvas 절차적 드로잉
+        final coinPaint = Paint()..color = const Color(0xFFFFD700);
+        canvas.drawCircle(Offset(cx, cy), coinRadius, coinPaint);
+        final hlPaint = Paint()..color = const Color(0xFFFFF9C4);
+        canvas.drawCircle(Offset(cx - 1.5, cy - 1.5), coinRadius * 0.4, hlPaint);
+        final borderPaint = Paint()
+          ..color = const Color(0xFFFF8F00)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.0;
+        canvas.drawCircle(Offset(cx, cy), coinRadius, borderPaint);
+      }
 
       // 고액 골드 수치 표시
       if (gold.goldValue >= 5) {
