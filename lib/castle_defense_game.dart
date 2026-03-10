@@ -700,6 +700,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   Image? minibossMonsterImage;
   bool minibossMonsterImageLoaded = false;
 
+  // #34 속성UI: 부유 데미지 숫자 목록
+  final List<_DamageNumber> _damageNumbers = [];
+
   // B-3-2: 몬스터 오브젝트 풀 (GC 압력 감소)
   final List<_Monster> _monsterPool = [];
 
@@ -1000,6 +1003,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     _updateMainCharacterRespawn(dt); // 리디자인 B-2-7: 메인 캐릭터 복활
     _updateXpGems(dt); // 리디자인 B-2-8/B-2-9: XP 젬 업데이트 & 회수
     _updateGoldDrops(); // 리디자인 B-2-15: 골드 드롭 회수
+    // #34: 부유 데미지 숫자 업데이트
+    for (final dn in _damageNumbers) { dn.timer += dt; }
+    _damageNumbers.removeWhere((dn) => dn.isExpired);
     // D-3-1: 성 피격 점멸 타이머 감소
     if (castleFlashTimer > 0) castleFlashTimer -= dt;
     // 리디자인 B-2-20: 성 바리어 타이머 업데이트
@@ -3629,6 +3635,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     _renderXpGems(canvas);          // D-3-2: XP 젬
     _renderXpMagnetEffect(canvas);  // D-3-4: XP 마그넷 연출
     _renderGoldDrops(canvas);       // D-3-3: 골드 코인
+    _renderDamageNumbers(canvas);   // #34: 속성 데미지 숫자
     _renderStageProgress(canvas);
     _renderWeaponInfo(canvas);
     _renderHUD(canvas); // D-1-1: 상단 HUD
@@ -8189,6 +8196,50 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
           Offset(cx, cy + coinRadius + 8),
           fontSize: 8,
           color: const Color(0xFFFFD700),
+        );
+      }
+    }
+  }
+
+  // ============================================================
+  // #34 속성UI: 부유 데미지 숫자 렌더링
+  // - 속성에 따른 색상 / 유리(1.5x)=SUPER! / 불리(0.75x)=RESIST
+  // ============================================================
+  void _renderDamageNumbers(Canvas canvas) {
+    for (final dn in _damageNumbers) {
+      final double progress = (dn.timer / _DamageNumber.duration).clamp(0.0, 1.0);
+      // 위로 올라가는 이동 + 후반 페이드아웃
+      final double riseY = dn.pos.y - progress * 30;
+      final double alpha = progress < 0.7 ? 1.0 : 1.0 - (progress - 0.7) / 0.3;
+
+      // 속성 색상
+      final Color baseColor = _elementColor(dn.element);
+
+      // 데미지 수치
+      _drawCenteredText(
+        canvas,
+        '-${dn.amount}',
+        Offset(dn.pos.x, riseY),
+        fontSize: dn.elementMult >= 1.5 ? 16 : (dn.elementMult <= 0.75 ? 11 : 13),
+        color: Color.fromRGBO(baseColor.red, baseColor.green, baseColor.blue, alpha),
+      );
+
+      // SUPER! / RESIST 태그
+      if (dn.elementMult >= 1.5) {
+        _drawCenteredText(
+          canvas,
+          'SUPER!',
+          Offset(dn.pos.x, riseY - 16),
+          fontSize: 10,
+          color: Color.fromRGBO(255, 200, 0, alpha),
+        );
+      } else if (dn.elementMult <= 0.75) {
+        _drawCenteredText(
+          canvas,
+          'RESIST',
+          Offset(dn.pos.x, riseY - 14),
+          fontSize: 9,
+          color: Color.fromRGBO(150, 150, 150, alpha),
         );
       }
     }
