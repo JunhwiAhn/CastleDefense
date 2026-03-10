@@ -307,6 +307,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   final double castleHeight = 80.0; // 2배로 확대
   final int castleMaxHp = 200; // 리디자인: 성 최대 HP
   int castleHp = 200; // 리디자인: 성 현재 HP
+  double castleFlashTimer = 0.0; // Designer 요청 D-3-1: 성 피격 점멸 타이머
 
   // 몬스터 설정
   final double monsterRadius = 16.0;
@@ -384,6 +385,13 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   int _mainCharHp = 50;
   bool _mainCharAlive = true;
   double _mainCharDamageCooldown = 0.0; // 적 접촉 데미지 쿨다운 (0.5초)
+
+  // 리디자인 B-2-7: 복활 시스템
+  bool _mainCharRespawning = false; // 복활 카운트다운 중
+  double _respawnTimer = 0.0; // 복활 카운트다운 타이머
+  static const double _respawnDuration = 5.0; // 5초 카운트다운
+  double _invincibleTimer = 0.0; // 복활 후 무적 타이머
+  static const double _invincibleDuration = 2.0; // 2초 무적
 
   // 플레이어 정보 (네비게이션 바용)
   String playerNickname = 'Player';
@@ -631,6 +639,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     _checkCharacterMonsterCollisions(); // 캐릭터-몬스터 충돌 체크
     _updatePriestHeal(dt); // 리디자인 B-2-3: 성직자 성 회복
     _updateMainCharacterDamage(dt); // 리디자인 B-2-6: 메인 캐릭터 피해
+    _updateMainCharacterRespawn(dt); // 리디자인 B-2-7: 메인 캐릭터 복활
+    // D-3-1: 성 피격 점멸 타이머 감소
+    if (castleFlashTimer > 0) castleFlashTimer -= dt;
 
     // 현재 라운드의 몬스터 스폰
     if (spawnedMonsters < totalMonstersInRound) {
@@ -734,12 +745,14 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
             if (m.castleAttackTimer >= attackInterval) {
               m.castleAttackTimer = 0.0;
               castleHp = max(0, castleHp - damage);
+              castleFlashTimer = 0.2; // D-3-1: 성 피격 점멸
             }
             continue; // 성 공격 중에는 이동 안 함
           }
 
           // 일반 몬스터: 1데미지 후 소멸
           castleHp = max(0, castleHp - 1);
+          castleFlashTimer = 0.2; // D-3-1: 성 피격 점멸
           monsters.removeAt(i);
           escapedMonsters++;
           continue;
@@ -1065,6 +1078,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   // 리디자인 B-2-6: 메인 캐릭터가 몬스터와 접촉 시 0.5초마다 1데미지
   void _updateMainCharacterDamage(double dt) {
     if (!_mainCharAlive) return;
+    if (_invincibleTimer > 0) return; // B-2-7: 무적 중에는 피해 없음
     final mainUnit = characterUnits.where((u) => !u.isTower).firstOrNull;
     if (mainUnit == null) return;
 
@@ -1082,9 +1096,37 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         if (_mainCharHp <= 0) {
           _mainCharHp = 0;
           _mainCharAlive = false;
-          // TODO B-2-7: 복활 카운트다운 시작
+          _mainCharRespawning = true; // B-2-7: 복활 카운트다운 시작
+          _respawnTimer = _respawnDuration;
+          _stickActive = false; // 사망 중 스틱 비활성화
         }
         break;
+      }
+    }
+  }
+
+  // 리디자인 B-2-7: 메인 캐릭터 복활 처리
+  void _updateMainCharacterRespawn(double dt) {
+    // 무적 타이머 감소
+    if (_invincibleTimer > 0) {
+      _invincibleTimer -= dt;
+      if (_invincibleTimer < 0) _invincibleTimer = 0.0;
+    }
+
+    if (!_mainCharRespawning) return;
+
+    _respawnTimer -= dt;
+    if (_respawnTimer <= 0) {
+      // 복활: 성 오른쪽에 스폰, 최대 HP 회복, 2초 무적
+      _mainCharAlive = true;
+      _mainCharRespawning = false;
+      _mainCharHp = _mainCharMaxHp;
+      _invincibleTimer = _invincibleDuration;
+
+      // 메인 유닛 위치를 성 옆으로 이동
+      final mainUnit = characterUnits.where((u) => !u.isTower).firstOrNull;
+      if (mainUnit != null) {
+        mainUnit.pos = Vector2(castleCenterX + 60.0, castleCenterY);
       }
     }
   }
@@ -1567,10 +1609,10 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   void onDragStart(DragStartEvent event) {
     final pos = Offset(event.localPosition.x, event.localPosition.y);
 
-    // 리디자인 B-2-4: 플레이 중 스틱 입력
+    // 리디자인 B-2-4: 플레이 중 스틱 입력 (Designerの固定位置型に合わせる: 左下 80, size.y-110)
     if (gameState == GameState.playing) {
       _stickActive = true;
-      _stickBasePos = Vector2(event.localPosition.x, event.localPosition.y);
+      _stickBasePos = Vector2(80.0, size.y - 110.0);
       _stickKnobPos = _stickBasePos.clone();
       super.onDragStart(event);
       return;
@@ -2557,6 +2599,18 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         Offset(cx + 10, _castleRect.top + 15),
         Offset(cx + 20, _castleRect.top + 35),
         crackPaint,
+      );
+    }
+
+    // D-3-1: 성 피격 점멸 연출 (castleFlashTimer > 0일 때 빨간 오버레이)
+    if (castleFlashTimer > 0) {
+      // 0.2초 동안 알파가 점진적으로 줄어드는 빨간 점멸
+      final double flashAlpha = (castleFlashTimer / 0.2).clamp(0.0, 1.0) * 0.6;
+      final flashPaint = Paint()
+        ..color = Color.fromRGBO(244, 67, 54, flashAlpha); // hpRed
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(_castleRect, const Radius.circular(6)),
+        flashPaint,
       );
     }
 
