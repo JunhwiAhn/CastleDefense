@@ -2214,6 +2214,16 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       return;
     }
 
+    // 리디자인 B-2-14: 스킬 버튼 체크 (우측 하단 80px 원형)
+    if (skillReady) {
+      final skillBtnCenter = Offset(size.x - 60, size.y - 110);
+      final dist = (tapPos - Vector2(skillBtnCenter.dx, skillBtnCenter.dy)).length;
+      if (dist <= 40.0) {
+        _fireUltimateSkill();
+        return;
+      }
+    }
+
     // 캐릭터 슬롯 체크 (스킬 사용)
     for (int i = 0; i < characterSlots.length; i++) {
       final slotRect = _characterSlotRect(i);
@@ -2557,6 +2567,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     _renderProjectiles(canvas); // 투사물 렌더링
     _renderVfxEffects(canvas); // VFX 이펙트 렌더링
     _renderMonsters(canvas);
+    _renderXpGems(canvas);    // D-3-2: XP 젬
+    _renderGoldDrops(canvas); // D-3-3: 골드 코인
     _renderStageProgress(canvas);
     _renderWeaponInfo(canvas);
     _renderHUD(canvas); // D-1-1: 상단 HUD
@@ -5906,5 +5918,100 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       fontSize: 16,
       color: Color.fromRGBO(255, 255, 255, alpha),
     );
+  }
+
+  // ============================================================
+  // D-3-2: XP 젬 묘사 (파란 마름모, 소멸 전 점멸)
+  // ============================================================
+  void _renderXpGems(Canvas canvas) {
+    const double gemSize = 7.0;
+
+    for (final gem in xpGems) {
+      final cx = gem.pos.x;
+      final cy = gem.pos.y;
+
+      // 소멸 전 5초 이하: sin 파형 점멸
+      final double gemAlpha =
+          gem.isBlinking ? (0.4 + 0.6 * sin(gameTime * 8)).clamp(0.1, 1.0) : 1.0;
+
+      // 마름모 경로
+      final path = Path()
+        ..moveTo(cx, cy - gemSize)
+        ..lineTo(cx + gemSize * 0.6, cy)
+        ..lineTo(cx, cy + gemSize)
+        ..lineTo(cx - gemSize * 0.6, cy)
+        ..close();
+
+      // 채우기: xpGemBlue #1565C0
+      final fillPaint = Paint()
+        ..color = Color.fromRGBO(21, 101, 192, gemAlpha);
+      canvas.drawPath(path, fillPaint);
+
+      // 하이라이트 (좌상단 밝은 면)
+      final hlPath = Path()
+        ..moveTo(cx, cy - gemSize)
+        ..lineTo(cx + gemSize * 0.6, cy)
+        ..lineTo(cx, cy)
+        ..close();
+      final hlPaint = Paint()
+        ..color = Color.fromRGBO(100, 181, 246, gemAlpha * 0.7);
+      canvas.drawPath(hlPath, hlPaint);
+
+      // 테두리
+      final borderPaint = Paint()
+        ..color = Color.fromRGBO(33, 150, 243, gemAlpha)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0;
+      canvas.drawPath(path, borderPaint);
+
+      // 고가치 젬 (10XP 이상) 수치 표시
+      if (gem.xpValue >= 10) {
+        _drawCenteredText(
+          canvas,
+          '${gem.xpValue}',
+          Offset(cx, cy + gemSize + 8),
+          fontSize: 8,
+          color: Color.fromRGBO(144, 202, 249, gemAlpha),
+        );
+      }
+    }
+  }
+
+  // ============================================================
+  // D-3-3: 골드 코인 묘사 (금색 원형, goldYellow #FFD700)
+  // ============================================================
+  void _renderGoldDrops(Canvas canvas) {
+    const double coinRadius = 6.0;
+
+    for (final gold in goldDrops) {
+      final cx = gold.pos.x;
+      final cy = gold.pos.y;
+
+      // 코인 본체
+      final coinPaint = Paint()..color = const Color(0xFFFFD700);
+      canvas.drawCircle(Offset(cx, cy), coinRadius, coinPaint);
+
+      // 좌상단 하이라이트
+      final hlPaint = Paint()..color = const Color(0xFFFFF9C4);
+      canvas.drawCircle(Offset(cx - 1.5, cy - 1.5), coinRadius * 0.4, hlPaint);
+
+      // 테두리
+      final borderPaint = Paint()
+        ..color = const Color(0xFFFF8F00)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0;
+      canvas.drawCircle(Offset(cx, cy), coinRadius, borderPaint);
+
+      // 고액 골드 수치 표시
+      if (gold.goldValue >= 5) {
+        _drawCenteredText(
+          canvas,
+          '${gold.goldValue}',
+          Offset(cx, cy + coinRadius + 8),
+          fontSize: 8,
+          color: const Color(0xFFFFD700),
+        );
+      }
+    }
   }
 }
