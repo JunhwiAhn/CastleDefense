@@ -237,6 +237,26 @@ class _VfxEffect {
   double get progress => (timer / duration).clamp(0.0, 1.0);
 }
 
+// 리디자인 B-2-8: XP 젬 오브젝트
+class _XpGem {
+  Vector2 pos;
+  int xpValue;
+  double lifeTimer; // 남은 수명 (30초)
+  static const double maxLife = 30.0;
+
+  _XpGem({required this.pos, required this.xpValue}) : lifeTimer = maxLife;
+  bool get isExpired => lifeTimer <= 0;
+  bool get isBlinking => lifeTimer <= 5.0; // 5초 이하면 깜빡임
+}
+
+// 리디자인 B-2-15: 골드 오브젝트
+class _GoldDrop {
+  Vector2 pos;
+  int goldValue;
+
+  _GoldDrop({required this.pos, required this.goldValue});
+}
+
 // 캐릭터 유닛 (실제 전투 유닛)
 class _CharacterUnit {
   final String instanceId; // OwnedCharacter의 instanceId
@@ -434,7 +454,17 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   // VFX 이펙트 리스트
   final List<_VfxEffect> vfxEffects = [];
 
-  // 캐릭터 슬롯 (4개 - UI용)
+  // 리디자인 B-2-8: XP 젬 리스트
+  final List<_XpGem> xpGems = [];
+
+  // 리디자인 B-2-15: 골드 드롭 리스트
+  final List<_GoldDrop> goldDrops = [];
+
+  // 리디자인 B-2-13: 스킬 게이지 (0.0~100.0)
+  double skillGauge = 0.0;
+  bool skillReady = false; // 100%에서 true
+
+  // 캐릭터 슬롯 (5개 - UI용)
   final List<_CharacterSlot> characterSlots = [];
 
   // 랜덤
@@ -2470,6 +2500,11 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       _renderVirtualStick(canvas); // D-1-3: 버추얼 스틱 UI
     }
 
+    // D-2-4: 복활 카운트다운 오버레이
+    if (_mainCharRespawning && _respawnTimer > 0) {
+      _renderReviveCountdown(canvas, _respawnTimer);
+    }
+
     _renderGameStateOverlay(canvas);
   }
 
@@ -3000,8 +3035,13 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         canvas.drawCircle(center, characterUnitRadius + 2.0, buffPaint);
       }
 
-      // 캐릭터 원형 배경
-      final unitPaint = Paint()..color = unitColor;
+      // D-3-6: 무적 중 반투명 점멸 (메인 캐릭터만)
+      final bool isMainUnit = !unit.isTower;
+      final double unitAlpha = (isMainUnit && _invincibleTimer > 0)
+          ? (0.4 + 0.4 * sin(gameTime * 12)).clamp(0.15, 0.85) // 점멸: sin 파형
+          : 1.0;
+      final unitPaint = Paint()
+        ..color = unitColor.withValues(alpha: unitAlpha);
       canvas.drawCircle(center, characterUnitRadius, unitPaint);
 
       // 전사 검 휘두르기 효과 렌더링
@@ -5642,10 +5682,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       );
     }
 
-    // HP 바
-    final double hpRatio = mainUnit != null && mainUnit.maxHp > 0
-        ? (mainUnit.currentHp / mainUnit.maxHp).clamp(0.0, 1.0)
-        : 1.0;
+    // HP 바 (_mainCharHp/_mainCharMaxHp 사용 - B-2-6 실제 HP 상태 반영)
+    final double hpRatio =
+        (_mainCharHp / _mainCharMaxHp).clamp(0.0, 1.0);
     final double hpBarX = leftPad + 24;
 
     final hpBgPaint = Paint()..color = const Color(0xFF333333);
@@ -5675,10 +5714,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       hpFgPaint,
     );
 
-    // HP 수치
-    final String hpText = mainUnit != null
-        ? '${mainUnit.currentHp.toInt()}/${mainUnit.maxHp.toInt()}'
-        : '--';
+    // HP 수치 (_mainCharHp 실제 값 사용)
+    final String hpText = '$_mainCharHp/$_mainCharMaxHp';
     _drawText(
       canvas,
       hpText,
