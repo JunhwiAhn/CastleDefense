@@ -371,6 +371,25 @@ class _VfxEffect {
   double get progress => (timer / duration).clamp(0.0, 1.0);
 }
 
+// #34 속성UI: 부유 데미지 숫자
+class _DamageNumber {
+  Vector2 pos;
+  double timer;
+  final int amount;
+  final double elementMult; // 1.5=유리/0.75=불리/기타=보통
+  final ElementType element;
+
+  _DamageNumber({
+    required this.pos,
+    required this.amount,
+    required this.elementMult,
+    required this.element,
+  }) : timer = 0.0;
+
+  static const double duration = 1.2;
+  bool get isExpired => timer >= duration;
+}
+
 // 리디자인 B-2-8: XP 젬 오브젝트
 class _XpGem {
   Vector2 pos;
@@ -1481,27 +1500,36 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
   // 리디자인 B-2-11: 바프 선택 적용
   void _applyBuff(BuffType buff) {
+    // L-08: 영원의 계약 - 같은 효과 2회 이상 취득 시 +1스택 추가
+    final bool l08Bonus = _hasAugment('L-08') && (_buffSelectionCount[buff] ?? 0) >= 1;
+    _buffSelectionCount[buff] = (_buffSelectionCount[buff] ?? 0) + 1;
     switch (buff) {
       case BuffType.attackUp:
         if (_atkUpCount < 5) _atkUpCount++;
+        if (l08Bonus && _atkUpCount < 5) _atkUpCount++; // L-08 보너스
         break;
       case BuffType.attackSpdUp:
         if (_spdUpCount < 5) _spdUpCount++;
+        if (l08Bonus && _spdUpCount < 5) _spdUpCount++; // L-08 보너스
         break;
       case BuffType.moveSpeedUp:
         if (_moveUpCount < 3) _moveUpCount++;
+        if (l08Bonus && _moveUpCount < 3) _moveUpCount++; // L-08 보너스
         break;
       case BuffType.rangeUp:
         if (_rangeUpCount < 3) _rangeUpCount++;
+        if (l08Bonus && _rangeUpCount < 3) _rangeUpCount++; // L-08 보너스
         break;
       case BuffType.castleRepair:
         castleHp = min(castleMaxHp, castleHp + 20);
         break;
       case BuffType.towerPowerUp:
         if (_towerUpCount < 5) _towerUpCount++;
+        if (l08Bonus && _towerUpCount < 5) _towerUpCount++; // L-08 보너스
         break;
       case BuffType.xpMagnetUp:
         if (_magnetCount < 3) _magnetCount++;
+        if (l08Bonus && _magnetCount < 3) _magnetCount++; // L-08 보너스
         break;
       case BuffType.castleBarrier:
         _castleBarrierActive = true;
@@ -1534,6 +1562,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         break;
       case BuffType.elementMastery:
         if (_elementMasteryCount < 3) _elementMasteryCount++;
+        if (l08Bonus && _elementMasteryCount < 3) _elementMasteryCount++; // L-08 보너스
         break;
     }
     _lastChosenBuff = buff;
@@ -2188,6 +2217,13 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     final double curseMult = monster.curseTimer > 0 ? 1.2 : 1.0;
     final int finalDamage = (baseDamage * elementMult * curseMult).round();
     _damageMonster(monster, finalDamage);
+    // #34 속성UI: 부유 데미지 숫자 생성
+    _damageNumbers.add(_DamageNumber(
+      pos: Vector2(monster.pos.x, monster.pos.y - 20),
+      amount: finalDamage,
+      elementMult: elementMult,
+      element: attackerElement,
+    ));
   }
 
   void _damageMonster(_Monster monster, int damage) {
@@ -6975,6 +7011,46 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       color: const Color(0xFFAAAAAA),
     );
 
+    // D-1-6: 획득 XP/골드 플라이인 애니메이션
+    // t=0~0.5s: 슬라이드업+페이드인 / t=0.5~2.5s: 유지 / t=2.5~3.0s: 페이드아웃
+    if (_roundXpGained > 0 || _roundGoldGained > 0) {
+      final double t = _roundClearTimer.clamp(0.0, _roundClearDuration);
+      final double flyAlpha;
+      final double slideY;
+      if (t < 0.5) {
+        final double p = t / 0.5;
+        flyAlpha = p;
+        slideY = 20.0 * (1.0 - p);
+      } else if (t < 2.5) {
+        flyAlpha = 1.0;
+        slideY = 0.0;
+      } else {
+        final double p = (t - 2.5) / 0.5;
+        flyAlpha = (1.0 - p).clamp(0.0, 1.0);
+        slideY = 0.0;
+      }
+      // XP 획득 표시 (파란색, 좌측)
+      if (_roundXpGained > 0) {
+        _drawCenteredText(
+          canvas,
+          '+$_roundXpGained XP',
+          Offset(size.x * 0.35, size.y * 0.57 + slideY),
+          fontSize: 18,
+          color: Color.fromRGBO(33, 150, 243, flyAlpha),
+        );
+      }
+      // 골드 획득 표시 (금색, 우측)
+      if (_roundGoldGained > 0) {
+        _drawCenteredText(
+          canvas,
+          '+${_roundGoldGained}G',
+          Offset(size.x * 0.65, size.y * 0.57 + slideY),
+          fontSize: 18,
+          color: Color.fromRGBO(255, 215, 0, flyAlpha),
+        );
+      }
+    }
+
     // 다음 라운드 카운트다운 바
     final double progressRatio = _roundClearDuration > 0
         ? (1.0 - _roundClearTimer / _roundClearDuration).clamp(0.0, 1.0)
@@ -6982,7 +7058,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     const double barW = 160.0;
     const double barH = 6.0;
     final double barX = size.x / 2 - barW / 2;
-    final double barY = size.y * 0.55;
+    final double barY = size.y * 0.64;
 
     canvas.drawRRect(
       RRect.fromRectAndRadius(Rect.fromLTWH(barX, barY, barW, barH), const Radius.circular(3)),
