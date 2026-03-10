@@ -991,6 +991,19 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         _castleBarrierTimer = 0.0;
       }
     }
+    // 증강 시스템: 타이머 업데이트
+    if (_augmentR04Timer > 0) {
+      _augmentR04Timer -= dt;
+      if (_augmentR04Timer <= 0) { _augmentR04Timer = 0.0; _augmentR04Stacks = 0; }
+    }
+    if (_augmentL02Active) {
+      _augmentL02Timer -= dt;
+      if (_augmentL02Timer <= 0) _augmentL02Active = false;
+    }
+    if (_augmentL03BarrierActive) {
+      _augmentL03BarrierTimer -= dt;
+      if (_augmentL03BarrierTimer <= 0) _augmentL03BarrierActive = false;
+    }
 
     // 현재 라운드의 몬스터 스폰
     if (spawnedMonsters < totalMonstersInRound) {
@@ -1023,6 +1036,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
   void _updateRoundClear(double dt) {
     _roundClearTimer += dt;
+    // L-04: 시간의 가속 - 인터벌 중 XP 자석 상시 발동
+    if (_hasAugment('L-04')) _attractAllXpGems();
     if (_roundClearTimer >= _roundClearDuration) {
       _roundClearTimer = 0.0;
       // 증강 시스템: 라운드 2/4/5 클리어 후 증강 선택 화면
@@ -1122,8 +1137,13 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
             if (m.castleAttackTimer >= attackInterval) {
               m.castleAttackTimer = 0.0;
               if (!_castleBarrierActive) { // 리디자인 B-2-20: 바리어 무적
-                castleHp = max(0, castleHp - damage);
+                // R-08: 성 접촉 데미지 30% 감소, 최소 1
+                final int reducedDmg = _hasAugment('R-08') ? max(1, (damage * 0.7).floor()) : damage;
+                // L-03: 대지의 수호자 바리어 활성 시 50% 추가 감소
+                final int actualDmg = _augmentL03BarrierActive ? max(1, (reducedDmg * 0.5).floor()) : reducedDmg;
+                castleHp = max(0, castleHp - actualDmg);
                 castleFlashTimer = 0.2; // D-3-1: 성 피격 점멸
+                _onCastleDamaged();
               }
             }
             continue; // 성 공격 중에는 이동 안 함
@@ -1131,8 +1151,15 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
           // 일반 몬스터: 1데미지 후 소멸 (바리어 활성 시 무적)
           if (!_castleBarrierActive) { // 리디자인 B-2-20
-            castleHp = max(0, castleHp - 1);
-            castleFlashTimer = 0.2; // D-3-1: 성 피격 점멸
+            // R-08: 성 접촉 데미지 30% 감소 (1*0.7=0.7→절사=0)
+            final int normalDmg = _hasAugment('R-08') ? (1 * 0.7).floor() : 1;
+            // L-03: 대지의 수호자 바리어 활성 시 50% 추가 감소
+            final int actualDmg = _augmentL03BarrierActive ? max(0, (normalDmg * 0.5).floor()) : normalDmg;
+            if (actualDmg > 0) {
+              castleHp = max(0, castleHp - actualDmg);
+              castleFlashTimer = 0.2;
+              _onCastleDamaged();
+            }
           }
           _releaseMonster(monsters[i]); // B-3-2: 풀로 반환
           monsters.removeAt(i);
@@ -1326,6 +1353,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     final xpValue = mType == MonsterType.boss ? 50
         : mType == MonsterType.miniBoss ? 10 : 1;
     xpGems.add(_XpGem(pos: dropPos.clone(), xpValue: xpValue));
+    // R-09: 소멸 시간 +15초
+    if (_hasAugment('R-09') && xpGems.isNotEmpty) xpGems.last.lifeTimer += 15.0;
 
     // 리디자인 B-2-15: 골드 드롭 (C-09 증강: +30% 골드)
     final int baseGold = mType == MonsterType.boss ? 20
@@ -1339,6 +1368,18 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     final double gaugeIncrease = baseGauge * _augmentSkillGaugeMultiplier;
     skillGauge = min(100.0, skillGauge + gaugeIncrease);
     if (skillGauge >= 100.0) skillReady = true;
+    // L-07: 영혼의 연쇄 - 격파 시 다음 타워 공격 크리티컬 예약
+    if (_hasAugment('L-07')) _augmentL07NextCrit = true;
+    // C-10: 여파 - 격파 시 주위 30px 스플래시 데미지
+    if (_hasAugment('C-10')) {
+      const double splashRadius = 30.0;
+      final int splashDmg = max(1, _buffedMainAtkMultiplier.round());
+      for (int j = monsters.length - 1; j >= 0; j--) {
+        if ((dropPos - monsters[j].pos).length <= splashRadius) {
+          _damageMonster(monsters[j], splashDmg);
+        }
+      }
+    }
   }
 
   // 리디자인 B-2-10: 다음 레벨에 필요한 XP (10 + Level * 5)
@@ -1352,8 +1393,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       _pendingLevelUp = true;
       // 리디자인 B-2-11: 레벨업 바프 카드 선택 화면으로 전환
       _generateBuffOptions();
-      // 리디자인 B-2-12: 레벨업 시 XP 자석 효과 발동 (1초)
-      _xpMagnetTimer = _xpMagnetDuration;
+      // R-10: 이단 축적 - 레벨업 시 XP 자석 2연속 발동 (2초)
+      _xpMagnetTimer = _hasAugment('R-10') ? _xpMagnetDuration * 2 : _xpMagnetDuration;
       gameState = GameState.levelUp;
     }
   }
@@ -1767,10 +1808,17 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         _mainCharDamageCooldown = 0.5;
         _mainCharHp -= 1;
         if (_mainCharHp <= 0) {
+          // L-01: 불사의 서약 - 1회 HP=1 생존 + 3초 무적
+          if (_hasAugment('L-01') && !_augmentL01Used) {
+            _augmentL01Used = true;
+            _mainCharHp = 1;
+            _invincibleTimer = 3.0;
+            break;
+          }
           _mainCharHp = 0;
           _mainCharAlive = false;
           _mainCharRespawning = true; // B-2-7: 복활 카운트다운 시작
-          _respawnTimer = _respawnDuration;
+          _respawnTimer = _effectiveRespawnDuration; // C-08: 동적 대기시간
           _stickActive = false; // 사망 중 스틱 비활성화
         }
         break;
@@ -1794,7 +1842,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       _mainCharAlive = true;
       _mainCharRespawning = false;
       _mainCharHp = _mainCharMaxHp;
-      _invincibleTimer = _invincibleDuration;
+      _invincibleTimer = _effectiveInvincibleDuration; // C-13: 동적 무적시간
 
       // 메인 유닛 위치를 성 옆으로 이동
       final mainUnit = characterUnits.where((u) => !u.isTower).firstOrNull;
@@ -2513,6 +2561,27 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
   // 증강 보유 여부 확인 (ID로 조회)
   bool _hasAugment(String id) => _acquiredAugmentIds.contains(id);
+
+  // 증강 시스템: 성이 데미지를 받은 후 트리거 (R-04/R-12/L-03)
+  void _onCastleDamaged() {
+    // R-04: 성의 분노 - 피격 시 스택 추가 (최대 3), 5초 타이머 리셋
+    if (_hasAugment('R-04')) {
+      _augmentR04Stacks = min(3, _augmentR04Stacks + 1);
+      _augmentR04Timer = 5.0;
+    }
+    // R-12: 성 HP 50 이하 시 1회 바리어 자동 발동 (10초)
+    if (_hasAugment('R-12') && !_augmentR12Used && castleHp <= 50) {
+      _augmentR12Used = true;
+      _castleBarrierActive = true;
+      _castleBarrierTimer = 10.0;
+    }
+    // L-03: 성 HP 최대값 30% 이하 시 1회 60초 바리어 발동 (데미지 50% 감소)
+    if (_hasAugment('L-03') && !_augmentL03Used && castleHp <= castleMaxHp * 0.3) {
+      _augmentL03Used = true;
+      _augmentL03BarrierActive = true;
+      _augmentL03BarrierTimer = 60.0;
+    }
+  }
 
   // 증강 효과 배율 계산 (복수 증강 반영)
   double get _augmentGoldMultiplier =>
@@ -3551,43 +3620,58 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     _renderGameStateOverlay(canvas);
   }
 
-  // 리디자인 B-2-11: 레벨업 바프 카드 UI (Designer D-2-1에서 구체적 구현)
-  // 임시: 반투명 오버레이 + 바프 이름 텍스트 3장
+  // D-2-1: 레벨업 바프 카드 UI (Violet Theme)
+  // 카드 좌표는 _handleTapInLevelUp 과 동기화 (cardW=100, cardH=150, gap=10, cardY=0.30)
   void _renderLevelUpUI(Canvas canvas) {
-    // 반투명 배경
-    final bgPaint = Paint()..color = const Color(0xCC000000);
+    // 반투명 보라색 배경 오버레이
+    final bgPaint = Paint()..color = const Color(0xDD0A0014);
     canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y), bgPaint);
 
-    // LEVEL UP 텍스트
-    _drawText(
+    // 상단 장식 바 (바이올렛)
+    final decorPaint = Paint()..color = const Color(0xFF7C3AED);
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.x, 4), decorPaint);
+
+    // "LEVEL UP!" 제목
+    _drawCenteredText(
       canvas,
-      'LEVEL UP! Lv.$playerCharLevel',
-      Offset(size.x / 2, size.y * 0.2),
-      fontSize: 24,
+      'LEVEL UP!',
+      Offset(size.x / 2, size.y * 0.14),
+      fontSize: 30,
       color: const Color(0xFFFFD700),
     );
 
-    // 바프 카드 3장 (가로 3분할)
-    const double cardW = 110.0;
-    const double cardH = 160.0;
-    final double startX = (size.x - cardW * 3 - 16 * 2) / 2;
-    final double cardY = size.y * 0.35;
+    // 레벨 표시
+    _drawCenteredText(
+      canvas,
+      'Lv.$playerCharLevel',
+      Offset(size.x / 2, size.y * 0.22),
+      fontSize: 17,
+      color: const Color(0xFFE0CCFF),
+    );
+
+    // 바프 카드 3장 — _handleTapInLevelUp 좌표와 동기화
+    const double cardW = 100.0;
+    const double cardH = 150.0;
+    const double cardGap = 10.0;
+    final double totalW = 3 * cardW + 2 * cardGap;
+    final double startX = (size.x - totalW) / 2;
+    final double cardY = size.y * 0.30;
 
     for (int i = 0; i < _buffOptions.length && i < 3; i++) {
       final buff = _buffOptions[i];
-      final double cx = startX + i * (cardW + 16);
+      final double cx = startX + i * (cardW + cardGap);
       final cardRect = Rect.fromLTWH(cx, cardY, cardW, cardH);
 
-      // 카드 배경
-      final cardPaint = Paint()..color = const Color(0xFF2A3A5A);
+      // 카드 배경 (다크 바이올렛)
+      final cardPaint = Paint()..color = const Color(0xFF1E1040);
       canvas.drawRRect(
         RRect.fromRectAndRadius(cardRect, const Radius.circular(12)),
         cardPaint,
       );
 
-      // 카드 테두리
+      // 카드 테두리 (보라색 글로우)
       final borderPaint = Paint()
-        ..color = const Color(0xFF5A8AFF)
+        ..color = const Color(0xFF9B59F5)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2.0;
       canvas.drawRRect(
@@ -3595,33 +3679,118 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         borderPaint,
       );
 
+      // 상단 색상 헤더 바
+      final headerRect = Rect.fromLTWH(cx, cardY, cardW, 26);
+      final headerPaint = Paint()..color = const Color(0xFF7C3AED);
+      canvas.drawRRect(
+        RRect.fromRectAndCorners(
+          headerRect,
+          topLeft: const Radius.circular(12),
+          topRight: const Radius.circular(12),
+        ),
+        headerPaint,
+      );
+
+      // 헤더 아이콘
+      _drawCenteredText(
+        canvas,
+        _buffTypeIcon(buff),
+        Offset(cx + cardW / 2, cardY + 13),
+        fontSize: 14,
+      );
+
       // 바프 이름
-      _drawText(
+      _drawCenteredText(
         canvas,
         _buffTypeName(buff),
-        Offset(cx + cardW / 2, cardY + 20),
-        fontSize: 12,
+        Offset(cx + cardW / 2, cardY + 48),
+        fontSize: 11,
         color: const Color(0xFFFFFFFF),
       );
 
+      // 구분선
+      final divPaint = Paint()
+        ..color = const Color(0xFF4A3A6A)
+        ..strokeWidth = 1.0;
+      canvas.drawLine(
+        Offset(cx + 10, cardY + 62),
+        Offset(cx + cardW - 10, cardY + 62),
+        divPaint,
+      );
+
       // 바프 설명
-      _drawText(
+      _drawCenteredText(
         canvas,
         _buffTypeDesc(buff),
-        Offset(cx + cardW / 2, cardY + 60),
-        fontSize: 10,
-        color: const Color(0xFFBBCCFF),
+        Offset(cx + cardW / 2, cardY + 84),
+        fontSize: 9,
+        color: const Color(0xFFBBAEFF),
+        multiLine: true,
       );
+
+      // 스택 카운트 배지
+      final stackTxt = _buffStackText(buff);
+      if (stackTxt.isNotEmpty) {
+        final stackBgPaint = Paint()..color = const Color(0xFF3D1F6E);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(cx + cardW / 2 - 22, cardY + 129, 44, 14),
+            const Radius.circular(7),
+          ),
+          stackBgPaint,
+        );
+        _drawCenteredText(
+          canvas,
+          stackTxt,
+          Offset(cx + cardW / 2, cardY + 136),
+          fontSize: 9,
+          color: const Color(0xFFFFD700),
+        );
+      }
     }
 
-    // 탭 안내
-    _drawText(
+    // 탭 안내 (하단)
+    _drawCenteredText(
       canvas,
-      'Tap to select',
-      Offset(size.x / 2, size.y * 0.8),
-      fontSize: 14,
-      color: const Color(0x88FFFFFF),
+      'カードをタップして選択',
+      Offset(size.x / 2, size.y * 0.85),
+      fontSize: 13,
+      color: const Color(0x99CCAAFF),
     );
+  }
+
+  // D-2-1 헬퍼: 바프 타입 아이콘
+  String _buffTypeIcon(BuffType buff) {
+    switch (buff) {
+      case BuffType.attackUp:             return '⚔';
+      case BuffType.attackSpdUp:          return '⚡';
+      case BuffType.moveSpeedUp:          return '💨';
+      case BuffType.rangeUp:              return '🎯';
+      case BuffType.castleRepair:         return '🏰';
+      case BuffType.towerPowerUp:         return '🗼';
+      case BuffType.xpMagnetUp:           return '🧲';
+      case BuffType.castleBarrier:        return '🛡';
+      case BuffType.elementFireGrant:     return '🔥';
+      case BuffType.elementWaterGrant:    return '💧';
+      case BuffType.elementEarthGrant:    return '🌿';
+      case BuffType.elementElectricGrant: return '⚡';
+      case BuffType.elementDarkGrant:     return '🌑';
+      case BuffType.elementMastery:       return '✨';
+    }
+  }
+
+  // D-2-1 헬퍼: 스택 카운트 텍스트 (무제한 바프는 빈 문자열)
+  String _buffStackText(BuffType buff) {
+    switch (buff) {
+      case BuffType.attackUp:       return '$_atkUpCount / 5';
+      case BuffType.attackSpdUp:    return '$_spdUpCount / 5';
+      case BuffType.moveSpeedUp:    return '$_moveUpCount / 3';
+      case BuffType.rangeUp:        return '$_rangeUpCount / 3';
+      case BuffType.towerPowerUp:   return '$_towerUpCount / 5';
+      case BuffType.xpMagnetUp:     return '$_magnetCount / 3';
+      case BuffType.elementMastery: return '$_elementMasteryCount / 3';
+      default:                      return '';
+    }
   }
 
   // 바프 이름 표시
@@ -4931,48 +5100,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   }
 
 
-  // D-1-4: 스킬 버튼 UI (우측 하단)
-  void _renderSkillButton(Canvas canvas) {
-    final center = Offset(size.x - 60, size.y - 110);
-    const double radius = 40.0;
 
-    // 게이지 배경 (어두운 원)
-    final bgPaint = Paint()..color = const Color(0x99000000);
-    canvas.drawCircle(center, radius, bgPaint);
-
-    // 게이지 호 (skillGauge 0~100%)
-    final gaugePaint = Paint()
-      ..color = skillReady ? const Color(0xFFFFD700) : const Color(0xFF2196F3)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 5.0
-      ..strokeCap = StrokeCap.round;
-    final gaugeRect = Rect.fromCircle(center: center, radius: radius - 3);
-    // -pi/2 = 12시 방향
-    canvas.drawArc(
-      gaugeRect,
-      -1.5707963267948966,
-      (skillGauge / 100.0) * 6.283185307179586,
-      false,
-      gaugePaint,
-    );
-
-    // 아이콘
-    _drawCenteredText(
-      canvas,
-      skillReady ? "✨" : "⚡",
-      center,
-      fontSize: skillReady ? 22 : 18,
-    );
-
-    // 하단 보조 텍스트
-    _drawCenteredText(
-      canvas,
-      skillReady ? "SKILL!" : "${skillGauge.toInt()}%",
-      Offset(center.dx, center.dy + radius + 12),
-      fontSize: skillReady ? 11 : 10,
-      color: skillReady ? const Color(0xFFFFD700) : const Color(0xFFAAAAAA),
-    );
-  }
 
   // -----------------------------
   // 상태별 오버레이
@@ -5090,34 +5218,167 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     }
   }
 
-  // 리디자인 B-2-16: 상점 화면 임시 오버레이 (Designer D-2-2에서 구체화)
+  // D-2-2: 스테이지 클리어 후 상점 UI (Violet Theme)
+  // 탭 영역은 _handleTapInShop 과 동기화:
+  //   castleMaxHpUp: y in [0.30, 0.50), towerPowerUp: y in [0.50, 0.65), mainCharHpUp: y in [0.65, 0.80)
+  //   계속 버튼: y > 0.80
   void _renderShopOverlay(Canvas canvas) {
-    final bgPaint = Paint()..color = const Color(0xDD101828);
+    // 배경 오버레이
+    final bgPaint = Paint()..color = const Color(0xEE0A0A20);
     canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y), bgPaint);
 
-    _drawCenteredText(canvas, 'STAGE CLEAR!', Offset(size.x / 2, size.y * 0.12),
-        fontSize: 22, color: const Color(0xFFFFD700));
-    _drawCenteredText(canvas, '🏰 Castle repaired!', Offset(size.x / 2, size.y * 0.20),
-        fontSize: 14, color: const Color(0xFF88FF88));
-    _drawCenteredText(canvas, 'SHOP — Gold: ${playerGold}G', Offset(size.x / 2, size.y * 0.28),
-        fontSize: 16, color: const Color(0xFFFFCC44));
+    // 상단 장식 바 (골드)
+    final topBarPaint = Paint()..color = const Color(0xFFFFD700);
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.x, 4), topBarPaint);
 
-    // 아이템 목록 (임시) - Dart 2.x 호환 구조
-    final itemNames  = ['Castle MaxHP +20', 'Tower ATK +5%', 'Main HP +10'];
-    final itemPrices = ['50G', '30G', '20G'];
-    final itemCounts = [_shopCastleMaxHpCount, _shopTowerPowerCount, _shopMainCharHpCount];
-    final itemMaxes  = [10, 10, 5];
-    for (int i = 0; i < itemNames.length; i++) {
-      final double y = size.y * (0.38 + i * 0.12);
-      final color = itemCounts[i] >= itemMaxes[i]
-          ? const Color(0xFF666666)
-          : const Color(0xFFCCCCCC);
-      _drawCenteredText(canvas, '${itemNames[i]}  [${itemCounts[i]}/${itemMaxes[i]}]  ${itemPrices[i]}',
-          Offset(size.x / 2, y), fontSize: 13, color: color);
+    // "STAGE CLEAR!" 제목
+    _drawCenteredText(
+      canvas,
+      'STAGE CLEAR!',
+      Offset(size.x / 2, size.y * 0.07),
+      fontSize: 26,
+      color: const Color(0xFFFFD700),
+    );
+
+    // 성 수리 완료 알림
+    _drawCenteredText(
+      canvas,
+      '🏰  城 HP が完全回復しました',
+      Offset(size.x / 2, size.y * 0.14),
+      fontSize: 13,
+      color: const Color(0xFF4CAF50),
+    );
+
+    // 골드 표시 패널
+    final goldPanelRect = Rect.fromLTWH(size.x / 2 - 70, size.y * 0.19, 140, 28);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(goldPanelRect, const Radius.circular(14)),
+      Paint()..color = const Color(0xFF2A1C00),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(goldPanelRect, const Radius.circular(14)),
+      Paint()
+        ..color = const Color(0xFFFFD700)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
+    _drawCenteredText(
+      canvas,
+      '🪙  $playerGold G',
+      Offset(size.x / 2, size.y * 0.19 + 14),
+      fontSize: 14,
+      color: const Color(0xFFFFD700),
+    );
+
+    // 상점 아이템 3개
+    const List<String> names  = ['城 最大HP +20', 'タワー 攻撃力 +5%', 'メインHP +10'];
+    const List<String> icons  = ['🏰', '🗼', '🧑'];
+    const List<int>    prices = [50, 30, 20];
+    final List<int> counts    = [_shopCastleMaxHpCount, _shopTowerPowerCount, _shopMainCharHpCount];
+    const List<int> maxes     = [10, 10, 5];
+    // 탭 존 중앙 Y 좌표
+    final List<double> centerYs = [
+      size.y * 0.40,
+      size.y * 0.575,
+      size.y * 0.725,
+    ];
+
+    for (int i = 0; i < 3; i++) {
+      final bool maxed       = counts[i] >= maxes[i];
+      final bool affordable  = !maxed && playerGold >= prices[i];
+      final Color bgColor    = maxed ? const Color(0xFF1A1A1A)
+          : affordable ? const Color(0xFF1A1040)
+          : const Color(0xFF151515);
+      final Color borderColor = maxed ? const Color(0xFF444444)
+          : affordable ? const Color(0xFF7C3AED)
+          : const Color(0xFF555555);
+      final Color textColor  = maxed ? const Color(0xFF666666)
+          : affordable ? const Color(0xFFFFFFFF)
+          : const Color(0xFF888888);
+
+      final double cardH = 70.0;
+      final cardRect = Rect.fromLTWH(20, centerYs[i] - cardH / 2, size.x - 40, cardH);
+
+      // 카드 배경
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(cardRect, const Radius.circular(10)),
+        Paint()..color = bgColor,
+      );
+      // 카드 테두리
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(cardRect, const Radius.circular(10)),
+        Paint()
+          ..color = borderColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
+
+      // 아이콘
+      _drawCenteredText(
+        canvas,
+        icons[i],
+        Offset(cardRect.left + 35, centerYs[i]),
+        fontSize: 22,
+      );
+
+      // 아이템 이름
+      _drawCenteredText(
+        canvas,
+        names[i],
+        Offset(cardRect.left + 110, centerYs[i] - 10),
+        fontSize: 13,
+        color: textColor,
+      );
+
+      // 구매 횟수 표시
+      _drawCenteredText(
+        canvas,
+        maxed ? 'MAX' : '${counts[i]} / ${maxes[i]}',
+        Offset(cardRect.left + 110, centerYs[i] + 10),
+        fontSize: 11,
+        color: maxed ? const Color(0xFF888888) : const Color(0xFFAAAAAA),
+      );
+
+      // 가격 배지
+      final priceColor = affordable ? const Color(0xFFFFD700) : const Color(0xFF888888);
+      final priceBgRect = Rect.fromLTWH(
+        cardRect.right - 62, centerYs[i] - 14, 54, 28,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(priceBgRect, const Radius.circular(8)),
+        Paint()..color = maxed ? const Color(0xFF222222) : const Color(0xFF2A1C00),
+      );
+      _drawCenteredText(
+        canvas,
+        maxed ? 'MAX' : '${prices[i]}G',
+        Offset(priceBgRect.center.dx, priceBgRect.center.dy),
+        fontSize: 13,
+        color: priceColor,
+      );
     }
 
-    _drawCenteredText(canvas, 'Tap bottom to continue →', Offset(size.x / 2, size.y * 0.84),
-        fontSize: 14, color: const Color(0xFF88AAFF));
+    // 계속 버튼 (y > 0.80)
+    final continueRect = Rect.fromLTWH(
+      (size.x - 200) / 2, size.y * 0.84, 200, 44,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(continueRect, const Radius.circular(22)),
+      Paint()..color = const Color(0xFF5B21B6),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(continueRect, const Radius.circular(22)),
+      Paint()
+        ..color = const Color(0xFFD946EF)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0,
+    );
+    _drawCenteredText(
+      canvas,
+      '続ける  →',
+      continueRect.center,
+      fontSize: 16,
+      color: const Color(0xFFFFFFFF),
+    );
   }
 
   void _renderLoadingOverlay(Canvas canvas) {
@@ -6806,39 +7067,35 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   }
 
   void _renderResultOverlay(Canvas canvas) {
+    // 게임 오버 (성 HP=0) 는 전용 화면으로
+    if (!_lastStageClear) {
+      _renderGameOver(canvas);
+      return;
+    }
+
     final overlayPaint = Paint()..color = const Color(0xC0000000);
     canvas.drawRect(
       Rect.fromLTWH(0, 0, size.x, size.y),
       overlayPaint,
     );
 
-    // 제목
-    final title = _lastStageClear
-        ? 'Round $currentRound 클리어!'
-        : 'Round $currentRound 실패...';
-
-    final titleColor = _lastStageClear
-        ? const Color(0xFF00E676)
-        : const Color(0xFFEF5350);
-
+    // 클리어 제목
     _drawCenteredText(
       canvas,
-      title,
+      'Round $currentRound クリア!',
       Offset(size.x / 2, size.y * 0.25),
       fontSize: 28,
-      color: titleColor,
+      color: const Color(0xFF00E676),
     );
 
-    // 별점 표시 (클리어 시에만)
-    if (_lastStageClear) {
-      final stars = _calculateStars();
-      _renderStars(canvas, stars, Offset(size.x / 2, size.y * 0.35));
-    }
+    // 별점 표시
+    final stars = _calculateStars();
+    _renderStars(canvas, stars, Offset(size.x / 2, size.y * 0.35));
 
     // 무찌른 적 수
     _drawCenteredText(
       canvas,
-      '무찌른 적: $defeatedMonsters / $totalMonstersInRound',
+      '討伐: $defeatedMonsters / $totalMonstersInRound',
       Offset(size.x / 2, size.y * 0.45),
       fontSize: 16,
       color: const Color(0xFFFFFFFF),
@@ -6848,13 +7105,12 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     final roundSelectRect = _resultRoundSelectButtonRect();
     final nextRect = _resultNextRoundButtonRect();
 
-    _drawButton(canvas, retryRect, '다시하기');
-    _drawButton(canvas, roundSelectRect, '라운드 선택');
+    _drawButton(canvas, retryRect, 'もう一度');
+    _drawButton(canvas, roundSelectRect, 'ステージ選択');
 
-    // 클리어 시에만 다음 라운드 버튼 표시
     final nextRound = currentRound + 1;
-    if (_lastStageClear && nextRound <= totalRoundsInStage) {
-      _drawButton(canvas, nextRect, '다음 라운드', enabled: true);
+    if (nextRound <= totalRoundsInStage) {
+      _drawButton(canvas, nextRect, '次のラウンド', enabled: true);
     }
   }
 
@@ -6873,6 +7129,125 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     } else {
       return 0; // 40% 미만: 별 0개
     }
+  }
+
+  // D-2-3: 게임 오버 화면 (성 HP=0, 성 붕괴 연출 → 리저트)
+  void _renderGameOver(Canvas canvas) {
+    // 완전 어두운 배경
+    final bgPaint = Paint()..color = const Color(0xFF000000);
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y), bgPaint);
+
+    // 화면 주변 붉은 비네트 효과
+    final vignettePaint = Paint()
+      ..color = const Color(0x88EF1515)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 40.0;
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y), vignettePaint);
+
+    // 성 붕괴 그래픽 (파편 표현)
+    final ruinPaint = Paint()..color = const Color(0xFF444444);
+    final ruinBroken = Paint()..color = const Color(0xFF2A2A2A);
+    // 성터 기반부
+    canvas.drawRect(
+      Rect.fromLTWH(size.x / 2 - 40, size.y * 0.28, 80, 60),
+      ruinPaint,
+    );
+    // 부서진 파편 (좌상)
+    canvas.save();
+    canvas.translate(size.x / 2 - 55, size.y * 0.22);
+    canvas.rotate(0.3);
+    canvas.drawRect(const Rect.fromLTWH(0, 0, 28, 18), ruinBroken);
+    canvas.restore();
+    // 부서진 파편 (우)
+    canvas.save();
+    canvas.translate(size.x / 2 + 35, size.y * 0.24);
+    canvas.rotate(-0.2);
+    canvas.drawRect(const Rect.fromLTWH(0, 0, 22, 14), ruinBroken);
+    canvas.restore();
+    // 파편 작은 것들
+    for (int k = 0; k < 5; k++) {
+      final double px = size.x / 2 - 50 + k * 22.0;
+      final double py = size.y * 0.30 + (k.isEven ? -8.0 : 0.0);
+      canvas.drawRect(Rect.fromLTWH(px, py, 8, 8), ruinBroken);
+    }
+    // 균열 라인
+    final crackPaint = Paint()
+      ..color = const Color(0xFFEF5350)
+      ..strokeWidth = 2.0;
+    canvas.drawLine(
+      Offset(size.x / 2 - 20, size.y * 0.28),
+      Offset(size.x / 2 + 10, size.y * 0.35),
+      crackPaint,
+    );
+    canvas.drawLine(
+      Offset(size.x / 2 + 10, size.y * 0.35),
+      Offset(size.x / 2, size.y * 0.38),
+      crackPaint,
+    );
+
+    // "GAME OVER" 타이틀
+    _drawCenteredText(
+      canvas,
+      'GAME OVER',
+      Offset(size.x / 2, size.y * 0.47),
+      fontSize: 34,
+      color: const Color(0xFFEF5350),
+    );
+
+    // 서브 타이틀
+    _drawCenteredText(
+      canvas,
+      '城が陥落しました',
+      Offset(size.x / 2, size.y * 0.555),
+      fontSize: 16,
+      color: const Color(0xFFBBBBBB),
+    );
+
+    // 통계 구분선
+    final statLinePaint = Paint()
+      ..color = const Color(0xFF444444)
+      ..strokeWidth = 1.0;
+    canvas.drawLine(
+      Offset(size.x * 0.2, size.y * 0.60),
+      Offset(size.x * 0.8, size.y * 0.60),
+      statLinePaint,
+    );
+
+    // 통계: 라운드 & 처치 수
+    _drawCenteredText(
+      canvas,
+      'ラウンド $currentRound  |  討伐 $defeatedMonsters',
+      Offset(size.x / 2, size.y * 0.635),
+      fontSize: 14,
+      color: const Color(0xFF888888),
+    );
+
+    // 버튼 (재시도 / 스테이지 선택)
+    final retryRect  = _resultRetryButtonRect();
+    final selectRect = _resultRoundSelectButtonRect();
+
+    // 재시도 버튼 (레드 테마)
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(retryRect, const Radius.circular(8)),
+      Paint()..color = const Color(0xFFB71C1C),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(retryRect, const Radius.circular(8)),
+      Paint()
+        ..color = const Color(0xFFEF5350)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
+    _drawCenteredText(
+      canvas,
+      'もう一度',
+      retryRect.center,
+      fontSize: 16,
+      color: const Color(0xFFFFFFFF),
+    );
+
+    // 스테이지 선택 버튼
+    _drawButton(canvas, selectRect, 'ステージ選択');
   }
 
   // 별 렌더링
