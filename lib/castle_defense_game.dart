@@ -20,7 +20,16 @@ enum GameState {
   paused, // 일시정지
   levelUp, // 리디자인 B-2-11: 레벨업 바프 카드 선택 (게임 일시정지)
   roundClear, // 라운드 클리어 (잠깐 멈춤)
+  shopOpen, // 리디자인 B-2-16: 스테이지 클리어 후 상점 화면
   result, // 결과 화면 (클리어 or 실패)
+}
+
+// 리디자인 B-2-16: 상점 아이템 종류
+enum ShopItemType {
+  castleFullRepair,  // 성 HP 완전 회복 (무료, 스테이지 클리어 시 자동)
+  castleMaxHpUp,    // 성 최대 HP +20 (50G, 최대 10회)
+  towerPowerUp,     // 전체 타워 공격력 +5% (30G, 최대 10회)
+  mainCharHpUp,     // 메인 캐릭터 최대 HP +10 (20G, 최대 5회)
 }
 
 // 리디자인 B-2-11: 바프 타입 (P-2-1 기준 8종)
@@ -368,7 +377,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   // 기본 설정
   // -----------------------------
   final double castleHeight = 80.0; // 2배로 확대
-  final int castleMaxHp = 200; // 리디자인: 성 최대 HP
+  // 리디자인 B-2-16: 성 최대 HP (상점 업그레이드로 증가)
+  int get castleMaxHp => 200 + _shopCastleMaxHpCount * 20;
   int castleHp = 200; // 리디자인: 성 현재 HP
   double castleFlashTimer = 0.0; // Designer 요청 D-3-1: 성 피격 점멸 타이머
 
@@ -446,7 +456,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   static const int _priestHealAmount = 3; // 1회 회복량
 
   // 리디자인 B-2-6: 메인 캐릭터 HP
-  static const int _mainCharMaxHp = 50;
+  // 리디자인 B-2-16: 메인 캐릭터 최대 HP (상점 업그레이드로 증가)
+  int get _mainCharMaxHp => 50 + _shopMainCharHpCount * 10;
   int _mainCharHp = 50;
   bool _mainCharAlive = true;
   double _mainCharDamageCooldown = 0.0; // 적 접촉 데미지 쿨다운 (0.5초)
@@ -476,6 +487,10 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   bool _castleBarrierActive = false; // 성 바리어 활성 여부
   double _castleBarrierTimer = 0.0;  // 바리어 남은 시간
   static const double _castleBarrierDuration = 10.0;
+  // 리디자인 B-2-16: 상점 영구 강화 카운터 (스테이지 간 유지)
+  int _shopCastleMaxHpCount = 0;    // 성 최대 HP +20 구매 횟수 (최대 10)
+  int _shopTowerPowerCount = 0;     // 타워 공격력 +5% 구매 횟수 (최대 10)
+  int _shopMainCharHpCount = 0;     // 메인 캐릭터 HP +10 구매 횟수 (최대 5)
   // 레벨업 바프 선택지 (3장)
   List<BuffType> _buffOptions = [];
   BuffType? _lastChosenBuff; // 직전 선택 바프 (50% 확률 감소용)
@@ -760,6 +775,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         return;
       case GameState.roundClear:
         _updateRoundClear(dt);
+        return;
+      case GameState.shopOpen:
+        // 리디자인 B-2-16: 상점 화면 - 업데이트 없음
         return;
       case GameState.result:
         return;
@@ -1214,7 +1232,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   double get _buffedMainAtkIntervalMultiplier => pow(0.90, _spdUpCount).toDouble();
   double get _buffedMoveSpeed => _mainCharSpeed * pow(1.20, _moveUpCount).toDouble();
   double get _buffedRangeMultiplier => pow(1.15, _rangeUpCount).toDouble();
-  double get _buffedTowerAtkMultiplier => pow(1.10, _towerUpCount).toDouble();
+  // 리디자인 B-2-16: 타워 공격력 배율 (바프 + 상점 영구 강화 합산)
+  double get _buffedTowerAtkMultiplier =>
+      pow(1.10, _towerUpCount).toDouble() * pow(1.05, _shopTowerPowerCount).toDouble();
   // 리디자인 B-2-12: XP 자석 반경 (기본 20px + 스택당 +15px)
   double get _xpCollectRadius => 20.0 + 15.0 * _magnetCount;
 
@@ -1967,7 +1987,69 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       unlockedRoundMax = currentRound + 1;
     }
 
+    // 리디자인 B-2-16: 스테이지 클리어 시 성 HP 자동 완전 회복 (무료)
+    castleHp = castleMaxHp;
+
+    // 상점 화면으로 전환 (Designer D-2-2에서 UI 구현)
+    gameState = GameState.shopOpen;
+  }
+
+  // 리디자인 B-2-16: 상점 아이템 구매 로직
+  bool _buyShopItem(ShopItemType item) {
+    switch (item) {
+      case ShopItemType.castleFullRepair:
+        castleHp = castleMaxHp; // 무료
+        return true;
+      case ShopItemType.castleMaxHpUp:
+        if (_shopCastleMaxHpCount >= 10) return false; // 상한 초과
+        if (playerGold < 50) return false; // 골드 부족
+        playerGold -= 50;
+        _shopCastleMaxHpCount++;
+        castleHp = min(castleMaxHp, castleHp + 20); // HP도 증가분 즉시 반영
+        return true;
+      case ShopItemType.towerPowerUp:
+        if (_shopTowerPowerCount >= 10) return false;
+        if (playerGold < 30) return false;
+        playerGold -= 30;
+        _shopTowerPowerCount++;
+        return true;
+      case ShopItemType.mainCharHpUp:
+        if (_shopMainCharHpCount >= 5) return false;
+        if (playerGold < 20) return false;
+        playerGold -= 20;
+        _shopMainCharHpCount++;
+        // 현재 메인 캐릭터에 즉시 반영
+        _mainCharHp = min(_mainCharMaxHp, _mainCharHp + 10);
+        return true;
+    }
+  }
+
+  // 상점에서 다음 스테이지로 진행
+  void _leaveShop() {
     gameState = GameState.result;
+  }
+
+  // 상점 아이템 가격 조회
+  int shopItemPrice(ShopItemType item) {
+    switch (item) {
+      case ShopItemType.castleFullRepair: return 0;
+      case ShopItemType.castleMaxHpUp: return 50;
+      case ShopItemType.towerPowerUp: return 30;
+      case ShopItemType.mainCharHpUp: return 20;
+    }
+  }
+
+  // 상점 아이템 구매 가능 여부
+  bool canBuyShopItem(ShopItemType item) {
+    switch (item) {
+      case ShopItemType.castleFullRepair: return true;
+      case ShopItemType.castleMaxHpUp:
+        return _shopCastleMaxHpCount < 10 && playerGold >= 50;
+      case ShopItemType.towerPowerUp:
+        return _shopTowerPowerCount < 10 && playerGold >= 30;
+      case ShopItemType.mainCharHpUp:
+        return _shopMainCharHpCount < 5 && playerGold >= 20;
+    }
   }
 
   void _onGameOver() {
@@ -2008,6 +2090,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         break;
       case GameState.levelUp:
         _handleTapInLevelUp(pos);
+        break;
+      case GameState.shopOpen:
+        _handleTapInShop(pos);
         break;
       case GameState.roundClear:
         // 라운드 클리어 중에는 탭 무시 (자동 진행)
@@ -2608,6 +2693,25 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   }
 
   // 일시정지 화면: "재개 / 라운드 선택 / 재시작"
+  // 리디자인 B-2-16: 상점 화면 탭 처리
+  // 상점 UI 버튼 위치는 Designer(D-2-2) 구현과 맞춰야 함
+  // 임시: 화면 하단 "계속" 영역을 탭하면 상점 종료
+  void _handleTapInShop(Vector2 tapPos) {
+    // 화면 하단 20% 탭 = 상점 나가기 (계속 버튼 임시 위치)
+    if (tapPos.y > size.y * 0.8) {
+      _leaveShop();
+    }
+    // 상점 아이템 탭 영역 (Designer D-2-2에서 정확한 위치 구현)
+    // 임시 구현: 화면 Y 위치에 따라 아이템 선택
+    else if (tapPos.y > size.y * 0.3 && tapPos.y < size.y * 0.5) {
+      _buyShopItem(ShopItemType.castleMaxHpUp);
+    } else if (tapPos.y > size.y * 0.5 && tapPos.y < size.y * 0.65) {
+      _buyShopItem(ShopItemType.towerPowerUp);
+    } else if (tapPos.y > size.y * 0.65 && tapPos.y < size.y * 0.8) {
+      _buyShopItem(ShopItemType.mainCharHpUp);
+    }
+  }
+
   // 리디자인 B-2-11: 레벨업 화면 탭 처리 - 바프 카드 선택
   // 카드 위치는 Designer(_renderLevelUpUI)와 맞춰야 함
   // 임시: 화면 1/3 영역 3분할로 탭 감지
@@ -4147,9 +4251,43 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       _renderRoundClearOverlay(canvas);
     } else if (gameState == GameState.paused) {
       _renderPausedOverlay(canvas);
+    } else if (gameState == GameState.shopOpen) {
+      _renderShopOverlay(canvas); // 리디자인 B-2-16: 상점 화면
     } else if (gameState == GameState.result) {
       _renderResultOverlay(canvas);
     }
+  }
+
+  // 리디자인 B-2-16: 상점 화면 임시 오버레이 (Designer D-2-2에서 구체화)
+  void _renderShopOverlay(Canvas canvas) {
+    final bgPaint = Paint()..color = const Color(0xDD101828);
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y), bgPaint);
+
+    _drawCenteredText(canvas, 'STAGE CLEAR!', Offset(size.x / 2, size.y * 0.12),
+        fontSize: 22, color: const Color(0xFFFFD700));
+    _drawCenteredText(canvas, '🏰 Castle repaired!', Offset(size.x / 2, size.y * 0.20),
+        fontSize: 14, color: const Color(0xFF88FF88));
+    _drawCenteredText(canvas, 'SHOP — Gold: ${playerGold}G', Offset(size.x / 2, size.y * 0.28),
+        fontSize: 16, color: const Color(0xFFFFCC44));
+
+    // 아이템 목록 (임시)
+    final items = [
+      ('Castle MaxHP +20', '50G', _shopCastleMaxHpCount, 10),
+      ('Tower ATK +5%',    '30G', _shopTowerPowerCount, 10),
+      ('Main HP +10',      '20G', _shopMainCharHpCount, 5),
+    ];
+    for (int i = 0; i < items.length; i++) {
+      final (name, price, count, max) = items[i];
+      final double y = size.y * (0.38 + i * 0.12);
+      final color = count >= max
+          ? const Color(0xFF666666)
+          : const Color(0xFFCCCCCC);
+      _drawCenteredText(canvas, '$name  [$count/$max]  $price',
+          Offset(size.x / 2, y), fontSize: 13, color: color);
+    }
+
+    _drawCenteredText(canvas, 'Tap bottom to continue →', Offset(size.x / 2, size.y * 0.84),
+        fontSize: 14, color: const Color(0xFF88AAFF));
   }
 
   void _renderLoadingOverlay(Canvas canvas) {
