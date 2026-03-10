@@ -196,19 +196,46 @@ class _Projectile {
   Vector2 velocity; // 속도 벡터
   double damage;
   RoleType sourceRole; // 발사한 캐릭터의 역할 (이펙트 색상용)
+  ClassType? sourceClass; // 발사한 캐릭터의 클래스 (궁수/총잡이 구분용)
   _Monster? targetMonster; // 유도 미사일용 타겟
   double splashRadius; // 스플래시 데미지 범위 (0이면 단일 타겟)
   bool isMagic; // 마법 투사물 여부 (스플래시 효과용)
+  List<Vector2> trail; // 잔상 위치 (최대 3개)
 
   _Projectile({
     required this.pos,
     required this.velocity,
     required this.damage,
     required this.sourceRole,
+    this.sourceClass,
     this.targetMonster,
     this.splashRadius = 0.0,
     this.isMagic = false,
-  });
+  }) : trail = [];
+}
+
+// VFX 이펙트 종류
+enum VfxType { hit, death, shockwave, barrier }
+
+// VFX 이펙트
+class _VfxEffect {
+  Vector2 pos;
+  double timer; // 경과 시간
+  double duration; // 지속 시간
+  VfxType type;
+  double maxRadius; // 최대 반경 (충격파/죽음용)
+  Color color;
+
+  _VfxEffect({
+    required this.pos,
+    required this.type,
+    required this.duration,
+    required this.color,
+    this.maxRadius = 15.0,
+  }) : timer = 0.0;
+
+  bool get isExpired => timer >= duration;
+  double get progress => (timer / duration).clamp(0.0, 1.0);
 }
 
 // 캐릭터 유닛 (실제 전투 유닛)
@@ -365,6 +392,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
   // 투사물 리스트
   final List<_Projectile> projectiles = [];
+
+  // VFX 이펙트 리스트
+  final List<_VfxEffect> vfxEffects = [];
 
   // 캐릭터 슬롯 (4개 - UI용)
   final List<_CharacterSlot> characterSlots = [];
@@ -562,6 +592,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     _updateMonsters(dt);
     _updateCharacterUnits(dt); // 캐릭터 유닛 업데이트
     _updateProjectiles(dt); // 투사물 업데이트
+    _updateVfxEffects(dt); // VFX 이펙트 업데이트
     _checkCharacterMonsterCollisions(); // 캐릭터-몬스터 충돌 체크
 
     // 현재 라운드의 몬스터 스폰
@@ -1028,6 +1059,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
             velocity: velocity,
             damage: damage,
             sourceRole: unit.definition.role,
+            sourceClass: unit.definition.classType,
             targetMonster: i == 0 ? target : null, // 중앙 화살만 유도
           ));
         }
@@ -1103,6 +1135,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
           velocity: velocity,
           damage: damage,
           sourceRole: unit.definition.role,
+          sourceClass: unit.definition.classType,
           targetMonster: target,
           splashRadius: 50.0, // 스플래시 범위
           isMagic: true,
@@ -1122,6 +1155,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       velocity: velocity,
       damage: damage,
       sourceRole: unit.definition.role,
+      sourceClass: unit.definition.classType,
       targetMonster: target, // 유도 미사일용 타겟 설정
     ));
   }
@@ -1131,7 +1165,36 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     monster.hp -= damage;
     monster.damageFlashTimer = 0.15; // 0.15초 동안 빨간색 점멸
 
+    // 히트 스파크 VFX
+    vfxEffects.add(_VfxEffect(
+      pos: Vector2(monster.pos.x, monster.pos.y),
+      type: VfxType.hit,
+      duration: 0.2,
+      color: const Color(0xFFFFFFFF),
+    ));
+
     if (monster.hp <= 0) {
+      // 죽음 파프 VFX
+      Color deathColor;
+      switch (monster.type) {
+        case MonsterType.boss:
+          deathColor = const Color(0xFFFF5252);
+          break;
+        case MonsterType.miniBoss:
+          deathColor = const Color(0xFFFF9800);
+          break;
+        case MonsterType.normal:
+        default:
+          deathColor = const Color(0xFFFFEB3B);
+          break;
+      }
+      vfxEffects.add(_VfxEffect(
+        pos: Vector2(monster.pos.x, monster.pos.y),
+        type: VfxType.death,
+        duration: 0.4,
+        color: deathColor,
+      ));
+
       final index = monsters.indexOf(monster);
       if (index != -1) {
         _killMonsterAtIndex(index);
@@ -1197,6 +1260,12 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         proj.velocity = newDir * projectileSpeed;
       }
 
+      // 잔상 위치 기록 (총잡이용)
+      if (proj.sourceClass == ClassType.gunslinger) {
+        proj.trail.insert(0, Vector2(proj.pos.x, proj.pos.y));
+        if (proj.trail.length > 3) proj.trail.removeLast();
+      }
+
       // 투사물 이동
       proj.pos += proj.velocity * dt;
 
@@ -1249,6 +1318,16 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
       if (hit) {
         projectiles.removeAt(i);
+      }
+    }
+  }
+
+  // VFX 이펙트 업데이트
+  void _updateVfxEffects(double dt) {
+    for (int i = vfxEffects.length - 1; i >= 0; i--) {
+      vfxEffects[i].timer += dt;
+      if (vfxEffects[i].isExpired) {
+        vfxEffects.removeAt(i);
       }
     }
   }
@@ -2123,6 +2202,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     _renderCastle(canvas);
     _renderCharacterUnits(canvas); // 캐릭터 유닛 렌더링
     _renderProjectiles(canvas); // 투사물 렌더링
+    _renderVfxEffects(canvas); // VFX 이펙트 렌더링
     _renderMonsters(canvas);
     _renderStageProgress(canvas);
     _renderWeaponInfo(canvas);
@@ -2718,60 +2798,247 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     }
   }
 
-  // 투사물 렌더링
+  // 투사물 렌더링 (역할별 비주얼)
   void _renderProjectiles(Canvas canvas) {
     for (final proj in projectiles) {
       final center = Offset(proj.pos.x, proj.pos.y);
 
-      // 역할별 투사물 색상
+      // 마법 투사물 (마법사) — 펄스하는 광구 + 스파크 파티클
+      if (proj.isMagic) {
+        const projColor = Color(0xFFCE93D8);
+        // 스플래시 범위 표시
+        canvas.drawCircle(
+          center,
+          proj.splashRadius * 0.5,
+          Paint()..color = projColor.withValues(alpha: 0.15),
+        );
+        // 펄스하는 중심 구체
+        final pulseR = 6.0 + sin(gameTime * 10) * 2.0;
+        canvas.drawCircle(center, pulseR, Paint()..color = projColor);
+        // 글로우
+        canvas.drawCircle(
+          center,
+          pulseR * 1.8,
+          Paint()..color = projColor.withValues(alpha: 0.25),
+        );
+        // 주변 파티클 (2개가 회전)
+        for (int i = 0; i < 2; i++) {
+          final angle = gameTime * 8 + i * 3.14;
+          final px = proj.pos.x + cos(angle) * (pulseR + 5);
+          final py = proj.pos.y + sin(angle) * (pulseR + 5);
+          canvas.drawCircle(
+            Offset(px, py),
+            1.5,
+            Paint()..color = const Color(0xFFFFFFFF).withValues(alpha: 0.7),
+          );
+        }
+        continue;
+      }
+
+      // 궁수 — 삼각형 화살 + 짧은 몸통
+      if (proj.sourceClass == ClassType.archer) {
+        const projColor = Color(0xFFFF8A80);
+        final angle = atan2(proj.velocity.y, proj.velocity.x);
+        canvas.save();
+        canvas.translate(proj.pos.x, proj.pos.y);
+        canvas.rotate(angle);
+        // 삼각형 화살촉
+        final arrowHead = Path()
+          ..moveTo(6, 0)
+          ..lineTo(-4, -3.5)
+          ..lineTo(-4, 3.5)
+          ..close();
+        canvas.drawPath(arrowHead, Paint()..color = projColor);
+        // 몸통 선
+        canvas.drawLine(
+          const Offset(-4, 0),
+          const Offset(-12, 0),
+          Paint()
+            ..color = projColor.withValues(alpha: 0.6)
+            ..strokeWidth = 1.5,
+        );
+        canvas.restore();
+        continue;
+      }
+
+      // 총잡이 — 작은 원 + 잔상 트레일
+      if (proj.sourceClass == ClassType.gunslinger) {
+        const projColor = Color(0xFFFFE082);
+        // 잔상 (alpha 감소)
+        for (int t = 0; t < proj.trail.length; t++) {
+          final alpha = 0.5 - (t * 0.15);
+          final r = 2.5 - (t * 0.5);
+          canvas.drawCircle(
+            Offset(proj.trail[t].x, proj.trail[t].y),
+            r.clamp(1.0, 3.0),
+            Paint()..color = projColor.withValues(alpha: alpha.clamp(0.1, 0.5)),
+          );
+        }
+        // 선두 탄환
+        canvas.drawCircle(center, 3.0, Paint()..color = projColor);
+        continue;
+      }
+
+      // 성직자 — 떠오르는 십자가
+      if (proj.sourceRole == RoleType.priest) {
+        const projColor = Color(0xFF81C784);
+        final crossPaint = Paint()
+          ..color = projColor.withValues(alpha: 0.8)
+          ..strokeWidth = 2.0
+          ..strokeCap = StrokeCap.round;
+        canvas.drawLine(
+          Offset(proj.pos.x - 4, proj.pos.y),
+          Offset(proj.pos.x + 4, proj.pos.y),
+          crossPaint,
+        );
+        canvas.drawLine(
+          Offset(proj.pos.x, proj.pos.y - 4),
+          Offset(proj.pos.x, proj.pos.y + 4),
+          crossPaint,
+        );
+        continue;
+      }
+
+      // 기본 투사물 (fallback)
       Color projColor;
       switch (proj.sourceRole) {
         case RoleType.physicalDealer:
-          projColor = const Color(0xFFFF8A80); // 밝은 빨강
+          projColor = const Color(0xFFFF8A80);
           break;
         case RoleType.magicDealer:
-          projColor = const Color(0xFFCE93D8); // 밝은 보라
+          projColor = const Color(0xFFCE93D8);
           break;
         case RoleType.utility:
-          projColor = const Color(0xFF80CBC4); // 밝은 청록
+          projColor = const Color(0xFF80CBC4);
           break;
         default:
-          projColor = const Color(0xFFFFFFFF); // 흰색
+          projColor = const Color(0xFFFFFFFF);
           break;
       }
-
-      // 마법 투사물 (스플래시)은 더 크게 표시
-      if (proj.isMagic) {
-        // 스플래시 범위 표시 (반투명)
-        final splashPaint = Paint()
-          ..color = projColor.withValues(alpha: 0.2)
-          ..style = PaintingStyle.fill;
-        canvas.drawCircle(center, proj.splashRadius * 0.5, splashPaint);
-
-        // 마법 구체 (더 큰 원)
-        final magicPaint = Paint()..color = projColor;
-        canvas.drawCircle(center, 8.0, magicPaint);
-
-        // 마법 외곽 효과
-        final glowPaint = Paint()
-          ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.5)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.0;
-        canvas.drawCircle(center, 10.0, glowPaint);
-      } else {
-        // 일반 투사물
-        final projPaint = Paint()..color = projColor;
-        canvas.drawCircle(center, 4.0, projPaint); // 작은 원
-
-        // 투사물 꼬리 효과 (간단한 선)
-        final tailStart = Offset(
-          proj.pos.x - proj.velocity.x * 0.05,
-          proj.pos.y - proj.velocity.y * 0.05,
-        );
-        final tailPaint = Paint()
+      canvas.drawCircle(center, 4.0, Paint()..color = projColor);
+      final tailStart = Offset(
+        proj.pos.x - proj.velocity.x * 0.05,
+        proj.pos.y - proj.velocity.y * 0.05,
+      );
+      canvas.drawLine(
+        tailStart,
+        center,
+        Paint()
           ..color = projColor.withValues(alpha: 0.5)
-          ..strokeWidth = 2.0;
-        canvas.drawLine(tailStart, center, tailPaint);
+          ..strokeWidth = 2.0,
+      );
+    }
+  }
+
+  // VFX 이펙트 렌더링
+  void _renderVfxEffects(Canvas canvas) {
+    for (final vfx in vfxEffects) {
+      final center = Offset(vfx.pos.x, vfx.pos.y);
+      final p = vfx.progress;
+
+      switch (vfx.type) {
+        // 히트 스파크: 방사형 선이 퍼지며 사라짐
+        case VfxType.hit:
+          const sparkCount = 5;
+          final radius = 5.0 + p * 12.0;
+          final alpha = (1.0 - p).clamp(0.0, 1.0);
+          final paint = Paint()
+            ..color = const Color(0xFFFFFFFF).withValues(alpha: alpha)
+            ..strokeWidth = 1.5
+            ..strokeCap = StrokeCap.round;
+          for (int i = 0; i < sparkCount; i++) {
+            final angle = (i / sparkCount) * 3.14159 * 2 + 0.3;
+            final dx = cos(angle) * radius;
+            final dy = sin(angle) * radius;
+            canvas.drawLine(
+              Offset(center.dx + dx * 0.3, center.dy + dy * 0.3),
+              Offset(center.dx + dx, center.dy + dy),
+              paint,
+            );
+          }
+          break;
+
+        // 죽음 파프: 팽창하는 원 + 흩어지는 파티클
+        case VfxType.death:
+          if (p < 0.4) {
+            // Phase 1: 원 팽창
+            final phase1 = p / 0.4;
+            final radius = 8.0 + phase1 * 18.0;
+            final alpha = (1.0 - phase1 * 0.6).clamp(0.0, 1.0);
+            canvas.drawCircle(
+              center,
+              radius,
+              Paint()..color = vfx.color.withValues(alpha: alpha),
+            );
+          } else {
+            // Phase 2: 파티클 흩어짐
+            final phase2 = (p - 0.4) / 0.6;
+            final alpha = (1.0 - phase2).clamp(0.0, 1.0);
+            for (int i = 0; i < 6; i++) {
+              final angle = (i / 6) * 3.14159 * 2;
+              final dist = 10.0 + phase2 * 25.0;
+              final px = center.dx + cos(angle) * dist;
+              final py = center.dy + sin(angle) * dist;
+              canvas.drawCircle(
+                Offset(px, py),
+                2.5 - phase2 * 1.5,
+                Paint()..color = vfx.color.withValues(alpha: alpha),
+              );
+            }
+          }
+          break;
+
+        // 충격파: 확대되는 링
+        case VfxType.shockwave:
+          final maxR = vfx.maxRadius;
+          final radius = p * maxR;
+          final alpha = (1.0 - p).clamp(0.0, 1.0);
+          final strokeW = 20.0 - p * 18.0;
+          canvas.drawCircle(
+            center,
+            radius,
+            Paint()
+              ..color = const Color(0xFFFFFFFF).withValues(alpha: alpha * 0.8)
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = strokeW.clamp(2.0, 20.0),
+          );
+          // 중앙 플래시 (처음 0.1초만)
+          if (vfx.timer < 0.1) {
+            final flashAlpha = (1.0 - vfx.timer / 0.1).clamp(0.0, 1.0);
+            canvas.drawRect(
+              Rect.fromLTWH(0, 0, size.x, size.y),
+              Paint()..color = Color.fromRGBO(255, 255, 255, flashAlpha * 0.3),
+            );
+          }
+          break;
+
+        // 배리어: 회전하는 6각형
+        case VfxType.barrier:
+          final barrierAlpha = vfx.duration - vfx.timer < 3.0
+              ? (sin(vfx.timer * 8) * 0.5 + 0.5).clamp(0.0, 1.0)
+              : 0.6;
+          final angle = vfx.timer * 0.5;
+          final r = vfx.maxRadius;
+          final hexPath = Path();
+          for (int i = 0; i < 6; i++) {
+            final a = angle + (i / 6) * 3.14159 * 2;
+            final hx = center.dx + cos(a) * r;
+            final hy = center.dy + sin(a) * r;
+            if (i == 0) {
+              hexPath.moveTo(hx, hy);
+            } else {
+              hexPath.lineTo(hx, hy);
+            }
+          }
+          hexPath.close();
+          canvas.drawPath(
+            hexPath,
+            Paint()
+              ..color = const Color(0xFF00BCD4).withValues(alpha: barrierAlpha)
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 2.5,
+          );
+          break;
       }
     }
   }
