@@ -363,6 +363,17 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   // 테스트 갓 모드
   bool _godModeEnabled = false;
 
+  // 리디자인 B-2-4: 버추얼 스틱 상태
+  bool _stickActive = false;
+  Vector2 _stickBasePos = Vector2.zero();
+  Vector2 _stickKnobPos = Vector2.zero();
+  static const double _stickOuterRadius = 60.0;
+  static const double _stickKnobRadius = 25.0;
+  static const double _stickDeadzone = 7.0; // Planner 추천: 외경 12%
+
+  // 리디자인 B-2-5: 메인 캐릭터 이동 속도
+  static const double _mainCharSpeed = 150.0;
+
   // 플레이어 정보 (네비게이션 바용)
   String playerNickname = 'Player';
   int playerLevel = 1;
@@ -951,8 +962,33 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         if (unit.isTower && unit.towerFixedPos != null) {
           unit.pos.setFrom(unit.towerFixedPos!);
         }
+
+        // 리디자인 B-2-5: 메인 캐릭터는 핸들러 이동 취소 후 스틱 이동 적용
+        // (핸들러의 공격 처리만 활용, 이동은 스틱으로 덮어씀)
+        if (!unit.isTower) {
+          _applyMainCharacterMovement(unit, dt);
+        }
       }
     }
+  }
+
+  // 리디자인 B-2-5: 메인 캐릭터 스틱 이동
+  void _applyMainCharacterMovement(_CharacterUnit unit, double dt) {
+    if (!_stickActive) return;
+
+    final dx = _stickKnobPos.x - _stickBasePos.x;
+    final dy = _stickKnobPos.y - _stickBasePos.y;
+    final dist = sqrt(dx * dx + dy * dy);
+
+    if (dist <= _stickDeadzone) return;
+
+    // 정규화된 방향으로 150px/s 이동
+    unit.pos.x += (dx / dist) * _mainCharSpeed * dt;
+    unit.pos.y += (dy / dist) * _mainCharSpeed * dt;
+
+    // 화면 내 클램프
+    unit.pos.x = unit.pos.x.clamp(characterUnitRadius, size.x - characterUnitRadius);
+    unit.pos.y = unit.pos.y.clamp(characterUnitRadius, size.y - characterUnitRadius);
   }
 
   // 가장 가까운 몬스터 찾기 (메인 캐릭터용)
@@ -1471,6 +1507,15 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   void onDragStart(DragStartEvent event) {
     final pos = Offset(event.localPosition.x, event.localPosition.y);
 
+    // 리디자인 B-2-4: 플레이 중 스틱 입력
+    if (gameState == GameState.playing) {
+      _stickActive = true;
+      _stickBasePos = Vector2(event.localPosition.x, event.localPosition.y);
+      _stickKnobPos = _stickBasePos.clone();
+      super.onDragStart(event);
+      return;
+    }
+
     // 파티 팝업에서 드래그 시작
     if (gameState == GameState.roundSelect && showPartySelectionPopup) {
       const double popupWidth = 350.0;
@@ -1510,6 +1555,28 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   @override
   void onDragUpdate(DragUpdateEvent event) {
     final delta = event.localDelta;
+
+    // 리디자인 B-2-4: 플레이 중 스틱 노브 업데이트
+    if (gameState == GameState.playing && _stickActive) {
+      final newKnob = Vector2(
+        _stickKnobPos.x + delta.x,
+        _stickKnobPos.y + delta.y,
+      );
+      final dx = newKnob.x - _stickBasePos.x;
+      final dy = newKnob.y - _stickBasePos.y;
+      final dist = sqrt(dx * dx + dy * dy);
+      if (dist <= _stickOuterRadius) {
+        _stickKnobPos = newKnob;
+      } else {
+        // 외부 반경에서 클램프
+        _stickKnobPos = Vector2(
+          _stickBasePos.x + (dx / dist) * _stickOuterRadius,
+          _stickBasePos.y + (dy / dist) * _stickOuterRadius,
+        );
+      }
+      super.onDragUpdate(event);
+      return;
+    }
 
     // 파티 팝업 스크롤
     if (gameState == GameState.roundSelect &&
@@ -1562,6 +1629,11 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
   @override
   void onDragEnd(DragEndEvent event) {
+    // 리디자인 B-2-4: 스틱 비활성화
+    if (_stickActive) {
+      _stickActive = false;
+      _stickKnobPos = _stickBasePos.clone();
+    }
     _dragStartY = 0.0;
     _partyPopupDragStartY = 0.0;
     super.onDragEnd(event);
