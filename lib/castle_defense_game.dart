@@ -374,6 +374,17 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   // 리디자인 B-2-5: 메인 캐릭터 이동 속도
   static const double _mainCharSpeed = 150.0;
 
+  // 리디자인 B-2-3: 성직자 성 회복 타이머
+  double _priestHealTimer = 0.0;
+  static const double _priestHealInterval = 5.0; // 5초마다 회복
+  static const int _priestHealAmount = 3; // 1회 회복량
+
+  // 리디자인 B-2-6: 메인 캐릭터 HP
+  static const int _mainCharMaxHp = 50;
+  int _mainCharHp = 50;
+  bool _mainCharAlive = true;
+  double _mainCharDamageCooldown = 0.0; // 적 접촉 데미지 쿨다운 (0.5초)
+
   // 플레이어 정보 (네비게이션 바용)
   String playerNickname = 'Player';
   int playerLevel = 1;
@@ -618,6 +629,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     _updateProjectiles(dt); // 투사물 업데이트
     _updateVfxEffects(dt); // VFX 이펙트 업데이트
     _checkCharacterMonsterCollisions(); // 캐릭터-몬스터 충돌 체크
+    _updatePriestHeal(dt); // 리디자인 B-2-3: 성직자 성 회복
+    _updateMainCharacterDamage(dt); // 리디자인 B-2-6: 메인 캐릭터 피해
 
     // 현재 라운드의 몬스터 스폰
     if (spawnedMonsters < totalMonstersInRound) {
@@ -1027,6 +1040,53 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     }
 
     return nearest;
+  }
+
+  // 리디자인 B-2-3: 성직자가 타워 슬롯에 있으면 5초마다 성 HP +3 회복
+  void _updatePriestHeal(double dt) {
+    bool hasPriestTower = false;
+    for (final unit in characterUnits) {
+      if (unit.isTower && unit.definition.role == RoleType.priest) {
+        hasPriestTower = true;
+        break;
+      }
+    }
+    if (!hasPriestTower) {
+      _priestHealTimer = 0.0;
+      return;
+    }
+    _priestHealTimer += dt;
+    if (_priestHealTimer >= _priestHealInterval) {
+      _priestHealTimer = 0.0;
+      castleHp = min(castleMaxHp, castleHp + _priestHealAmount);
+    }
+  }
+
+  // 리디자인 B-2-6: 메인 캐릭터가 몬스터와 접촉 시 0.5초마다 1데미지
+  void _updateMainCharacterDamage(double dt) {
+    if (!_mainCharAlive) return;
+    final mainUnit = characterUnits.where((u) => !u.isTower).firstOrNull;
+    if (mainUnit == null) return;
+
+    if (_mainCharDamageCooldown > 0) {
+      _mainCharDamageCooldown -= dt;
+    }
+    if (_mainCharDamageCooldown > 0) return;
+
+    for (final m in monsters) {
+      final dist = (m.pos - mainUnit.pos).length;
+      final hitRadius = monsterRadius + characterUnitRadius;
+      if (dist <= hitRadius) {
+        _mainCharDamageCooldown = 0.5;
+        _mainCharHp -= 1;
+        if (_mainCharHp <= 0) {
+          _mainCharHp = 0;
+          _mainCharAlive = false;
+          // TODO B-2-7: 복활 카운트다운 시작
+        }
+        break;
+      }
+    }
   }
 
   // 근거리 유닛 처리 (전사: 범위 검 휘두르기)
@@ -2360,6 +2420,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     _renderMonsters(canvas);
     _renderStageProgress(canvas);
     _renderWeaponInfo(canvas);
+    _renderHUD(canvas); // D-1-1: 상단 HUD
 
     // 플레이 중에만 일시정지 버튼 + 버추얼 스틱 표시
     if (gameState == GameState.playing) {
@@ -5484,6 +5545,164 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       Offset(cx, barY - 10),
       fontSize: 11,
       color: const Color(0xFFFFFFFF),
+    );
+  }
+
+  // ============================================================
+  // D-1-1: 게임 화면 HUD (상단 UI)
+  // 레이아웃:
+  //   [1행] 캐릭터 아이콘 + HP바  |  Lv.X  |  XP바 (플레이스홀더)
+  //   [2행] 👾몬스터수  |  ⏱타이머  |  Stage X-Y
+  // ============================================================
+  void _renderHUD(Canvas canvas) {
+    const double topPad = 8.0;
+    const double leftPad = 12.0;
+    const double barHeight = 7.0;
+
+    // ── 반투명 HUD 배경 ──
+    final bgPaint = Paint()..color = const Color(0xCC000000);
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.x, 60), bgPaint);
+
+    // ── 1행: HP바 ──
+    final _CharacterUnit? mainUnit = characterUnits.isEmpty
+        ? null
+        : characterUnits.where((u) => !u.isTower).firstOrNull;
+
+    const double hpBarW = 100.0;
+    const double row1Y = topPad + 6;
+
+    // 캐릭터 아이콘 (메인 유닛 역할 이모지)
+    if (mainUnit != null) {
+      _drawCenteredText(
+        canvas,
+        mainUnit.definition.role.emoji,
+        Offset(leftPad + 10, row1Y + 4),
+        fontSize: 16,
+      );
+    } else {
+      _drawCenteredText(
+        canvas,
+        '🏃',
+        Offset(leftPad + 10, row1Y + 4),
+        fontSize: 16,
+      );
+    }
+
+    // HP 바
+    final double hpRatio = mainUnit != null && mainUnit.maxHp > 0
+        ? (mainUnit.currentHp / mainUnit.maxHp).clamp(0.0, 1.0)
+        : 1.0;
+    final double hpBarX = leftPad + 24;
+
+    final hpBgPaint = Paint()..color = const Color(0xFF333333);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(hpBarX, row1Y, hpBarW, barHeight),
+        const Radius.circular(3),
+      ),
+      hpBgPaint,
+    );
+
+    final Color hpColor;
+    if (hpRatio > 0.66) {
+      hpColor = const Color(0xFF4CAF50);
+    } else if (hpRatio > 0.33) {
+      hpColor = const Color(0xFFFFEB3B);
+    } else {
+      hpColor = const Color(0xFFF44336);
+    }
+
+    final hpFgPaint = Paint()..color = hpColor;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(hpBarX, row1Y, hpBarW * hpRatio, barHeight),
+        const Radius.circular(3),
+      ),
+      hpFgPaint,
+    );
+
+    // HP 수치
+    final String hpText = mainUnit != null
+        ? '${mainUnit.currentHp.toInt()}/${mainUnit.maxHp.toInt()}'
+        : '--';
+    _drawText(
+      canvas,
+      hpText,
+      Offset(hpBarX + 2, row1Y + 9),
+      fontSize: 8,
+      color: const Color(0xFFFFFFFF),
+    );
+
+    // Lv 표시 (중앙 상단)
+    _drawCenteredText(
+      canvas,
+      'Lv.$playerLevel',
+      Offset(size.x / 2, row1Y + 4),
+      fontSize: 13,
+      color: const Color(0xFFFFD700),
+    );
+
+    // XP 바 (우측, 플레이스홀더)
+    const double xpBarW = 90.0;
+    final double xpBarX = size.x - leftPad - xpBarW;
+    final xpBgPaint = Paint()..color = const Color(0xFF333333);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(xpBarX, row1Y, xpBarW, barHeight),
+        const Radius.circular(3),
+      ),
+      xpBgPaint,
+    );
+    // TODO: Engineer가 playerXp/xpToNextLevel 구현 후 연결
+    final xpFgPaint = Paint()..color = const Color(0xFF2196F3);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(xpBarX, row1Y, 0, barHeight), // 플레이스홀더
+        const Radius.circular(3),
+      ),
+      xpFgPaint,
+    );
+    _drawText(
+      canvas,
+      'XP',
+      Offset(xpBarX + 2, row1Y + 9),
+      fontSize: 8,
+      color: const Color(0xAAFFFFFF),
+    );
+
+    // ── 2행: 몬스터수 | 타이머 | 스테이지 ──
+    const double row2Y = topPad + 24;
+
+    // 좌측: 몬스터 수 (처치/총수)
+    final int remaining = totalMonstersInRound - defeatedMonsters;
+    _drawText(
+      canvas,
+      '👾 $remaining',
+      Offset(leftPad, row2Y + 4),
+      fontSize: 12,
+      color: const Color(0xFFFFFFFF),
+    );
+
+    // 중앙: 경과 타이머 (M:SS)
+    final int totalSec = roundTimer.toInt();
+    final int minutes = totalSec ~/ 60;
+    final int seconds = totalSec % 60;
+    final String timerText = '⏱ $minutes:${seconds.toString().padLeft(2, '0')}';
+    _drawCenteredText(
+      canvas,
+      timerText,
+      Offset(size.x / 2, row2Y + 4),
+      fontSize: 12,
+      color: const Color(0xFFFFFFFF),
+    );
+
+    // 우측: 스테이지 표시
+    _drawText(
+      canvas,
+      'Stage $stageLevel-$currentRound',
+      Offset(size.x - leftPad - 80, row2Y + 4),
+      fontSize: 12,
+      color: const Color(0xFFAAAAAA),
     );
   }
 }
