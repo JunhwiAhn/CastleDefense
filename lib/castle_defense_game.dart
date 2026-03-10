@@ -670,6 +670,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     _updatePriestHeal(dt); // 리디자인 B-2-3: 성직자 성 회복
     _updateMainCharacterDamage(dt); // 리디자인 B-2-6: 메인 캐릭터 피해
     _updateMainCharacterRespawn(dt); // 리디자인 B-2-7: 메인 캐릭터 복활
+    _updateXpGems(dt); // 리디자인 B-2-8/B-2-9: XP 젬 업데이트 & 회수
+    _updateGoldDrops(); // 리디자인 B-2-15: 골드 드롭 회수
     // D-3-1: 성 피격 점멸 타이머 감소
     if (castleFlashTimer > 0) castleFlashTimer -= dt;
 
@@ -910,8 +912,27 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
   void _killMonsterAtIndex(int index) {
     if (index < 0 || index >= monsters.length) return;
+    final m = monsters[index];
+    final dropPos = m.pos.clone();
+    final mType = m.type;
     monsters.removeAt(index);
     defeatedMonsters++;
+
+    // 리디자인 B-2-8: XP 젬 드롭
+    final xpValue = mType == MonsterType.boss ? 50
+        : mType == MonsterType.miniBoss ? 10 : 1;
+    xpGems.add(_XpGem(pos: dropPos.clone(), xpValue: xpValue));
+
+    // 리디자인 B-2-15: 골드 드롭
+    final goldValue = mType == MonsterType.boss ? 20
+        : mType == MonsterType.miniBoss ? 5 : 1;
+    goldDrops.add(_GoldDrop(pos: dropPos, goldValue: goldValue));
+
+    // 리디자인 B-2-13: 스킬 게이지 충전
+    final gaugeIncrease = mType == MonsterType.boss ? 50.0
+        : mType == MonsterType.miniBoss ? 15.0 : 3.0;
+    skillGauge = min(100.0, skillGauge + gaugeIncrease);
+    if (skillGauge >= 100.0) skillReady = true;
   }
 
   bool _isPointInsideMonster(_Monster m, Vector2 tapPos) {
@@ -1157,6 +1178,52 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       final mainUnit = characterUnits.where((u) => !u.isTower).firstOrNull;
       if (mainUnit != null) {
         mainUnit.pos = Vector2(castleCenterX + 60.0, castleCenterY);
+      }
+    }
+  }
+
+  // 리디자인 B-2-8/B-2-9: XP 젬 수명 감소 + 메인 캐릭터 회수
+  void _updateXpGems(double dt) {
+    final mainUnit = _mainCharAlive
+        ? characterUnits.where((u) => !u.isTower).firstOrNull
+        : null;
+    const double collectRadius = 20.0; // 회수 반경 20px
+
+    for (int i = xpGems.length - 1; i >= 0; i--) {
+      final gem = xpGems[i];
+      gem.lifeTimer -= dt;
+
+      // 회수 체크
+      if (mainUnit != null) {
+        final dist = (gem.pos - mainUnit.pos).length;
+        if (dist <= collectRadius) {
+          // TODO B-2-10: xpValue 를 플레이어 XP에 가산
+          xpGems.removeAt(i);
+          continue;
+        }
+      }
+
+      // 수명 종료
+      if (gem.isExpired) {
+        xpGems.removeAt(i);
+      }
+    }
+  }
+
+  // 리디자인 B-2-15: 골드 드롭 회수 (메인 캐릭터 접촉)
+  void _updateGoldDrops() {
+    final mainUnit = _mainCharAlive
+        ? characterUnits.where((u) => !u.isTower).firstOrNull
+        : null;
+    if (mainUnit == null) return;
+    const double collectRadius = 24.0;
+
+    for (int i = goldDrops.length - 1; i >= 0; i--) {
+      final drop = goldDrops[i];
+      final dist = (drop.pos - mainUnit.pos).length;
+      if (dist <= collectRadius) {
+        playerGold += drop.goldValue;
+        goldDrops.removeAt(i);
       }
     }
   }
