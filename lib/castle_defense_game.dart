@@ -1807,6 +1807,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         if (dx * dx + dy * dy <= collectRadius * collectRadius) {
           // 리디자인 B-2-10: XP 가산 및 레벨업 체크
           playerXp += gem.xpValue;
+          _roundXpGained += gem.xpValue; // D-1-6: 라운드 XP 추적
           _checkLevelUp();
           xpGems.removeAt(i);
           continue;
