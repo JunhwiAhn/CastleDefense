@@ -138,7 +138,7 @@ extension CombatSystem on CastleDefenseGame {
 
   // 몬스터 어그로 업데이트 (탱커에게 끌림)
   void _updateMonsterAggro(_Monster monster) {
-    const double aggroRange = 200.0; // 어그로 범위 (전사가 더 넓게 어그로 끌기)
+    const double aggroRange = 60.0; // 어그로 범위 축소 (200→60, 근접해야 어그로)
 
     // 가장 가까운 탱커 찾기
     _CharacterUnit? nearestTanker;
@@ -1241,6 +1241,17 @@ extension CombatSystem on CastleDefenseGame {
             // 데미지 적용
             _damageMonster(monster, collisionDamage.toInt());
             monster.lastHitTime = gameTime; // 마지막 피격 시간 갱신
+
+            // 충돌 이펙트 VFX (캐릭터-몬스터 사이 중간점)
+            final hitX = (unit.pos.x + monster.pos.x) / 2;
+            final hitY = (unit.pos.y + monster.pos.y) / 2;
+            vfxEffects.add(_VfxEffect(
+              pos: Vector2(hitX, hitY),
+              type: VfxType.hit,
+              duration: 0.25,
+              color: const Color(0xFFFF8A65), // 주황색 충돌 이펙트
+              maxRadius: 12.0,
+            ));
           }
         }
       }

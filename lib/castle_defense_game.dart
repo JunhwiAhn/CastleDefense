@@ -285,7 +285,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
   // 캐릭터 설정
   final double characterUnitRadius = 12.0; // 캐릭터 크기
-  final double projectileSpeed = 200.0; // 투사물 속도
+  final double projectileSpeed = 400.0; // 투사물 속도 (200→400 라그 감소)
   final double meleeRange = 40.0; // 근거리 공격 범위
   final double rangedRange = 375.0; // 원거리 공격 범위 (250 * 1.5)
   final double physicalDealerRange = 525.0; // 물리 딜러 사거리 (350 * 1.5)
