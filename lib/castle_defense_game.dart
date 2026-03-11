@@ -253,6 +253,30 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   Image? minibossMonsterImage;
   bool minibossMonsterImageLoaded = false;
 
+  // 스테이지별 몬스터 스프라이트
+  Image? normalGoblinImage;
+  Image? normalSkeletonImage;
+  Image? normalSlimeImage;
+  Image? normalPoisonSkullImage;
+  Image? normalGreenGoblinImage;
+  // 스테이지별 일반 몬스터 (각 스테이지 3종)
+  final Map<String, Image> stageMonsterImages = {};
+  // 미니보스 스프라이트
+  Image? minibossGoblinWarriorImage;
+  Image? minibossSkullWarriorImage;
+  Image? minibossSlimeKingImage;
+  // 보스 스프라이트
+  Image? bossCerberusImage;
+  Image? bossPoisonWarriorImage;
+  // 속성별 미니보스 스프라이트
+  final Map<String, Image> minibossElementImages = {};
+
+  // 캐릭터 스프라이트
+  final Map<String, Image> characterImages = {};
+
+  // 성 요새 스프라이트
+  Image? castleFortressImage;
+
   // #34 속성UI: 부유 데미지 숫자 목록
   final List<_DamageNumber> _damageNumbers = [];
 
@@ -294,6 +318,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       _loadXpGemSprite(),
       _loadGoldCoinSprite(),
       _loadBossSprites(),
+      _loadMonsterSprites(),
+      _loadCharacterSprites(),
+      _loadCastleFortressSprite(),
     ]);
   }
 
@@ -351,6 +378,95 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     } catch (e) {
       minibossMonsterImageLoaded = false;
     }
+  }
+
+  // 몬스터 스프라이트 일괄 로드 (스테이지별 + 미니보스 + 보스)
+  Future<void> _loadMonsterSprites() async {
+    // 일반 몬스터 (기본 5종)
+    final normalMonsters = {
+      'normal_goblin': 'monsters/normal_goblin.png',
+      'normal_skeleton': 'monsters/normal_skeleton.png',
+      'normal_slime': 'monsters/normal_slime.png',
+      'normal_poison_skull': 'monsters/normal_poison_skull.png',
+      'normal_green_goblin': 'monsters/normal_green_goblin.png',
+    };
+    for (final entry in normalMonsters.entries) {
+      try {
+        final img = await images.load(entry.value);
+        switch (entry.key) {
+          case 'normal_goblin': normalGoblinImage = img; break;
+          case 'normal_skeleton': normalSkeletonImage = img; break;
+          case 'normal_slime': normalSlimeImage = img; break;
+          case 'normal_poison_skull': normalPoisonSkullImage = img; break;
+          case 'normal_green_goblin': normalGreenGoblinImage = img; break;
+        }
+      } catch (_) {}
+    }
+
+    // 스테이지별 몬스터 (각 스테이지 3종)
+    final stageFiles = [
+      'monsters/monster_stage1_rat.png',
+      'monsters/monster_stage1_slime.png',
+      'monsters/monster_stage1_worm.png',
+      'monsters/monster_stage2_skull.png',
+      'monsters/monster_stage2_slime.png',
+      'monsters/monster_stage2_spider.png',
+      'monsters/monster_stage3_scorpion.png',
+      'monsters/monster_stage3_skull.png',
+      'monsters/monster_stage3_slime.png',
+      'monsters/monster_stage4_skull.png',
+      'monsters/monster_stage4_spider.png',
+      'monsters/monster_stage4_wolf.png',
+      'monsters/monster_stage5_boneworm.png',
+      'monsters/monster_stage5_ooze.png',
+      'monsters/monster_stage5_wolf.png',
+    ];
+    for (final path in stageFiles) {
+      try {
+        final img = await images.load(path);
+        // 키: 파일명에서 확장자 제거 (예: monster_stage1_rat)
+        final key = path.split('/').last.replaceAll('.png', '');
+        stageMonsterImages[key] = img;
+      } catch (_) {}
+    }
+
+    // 미니보스 스프라이트
+    try { minibossGoblinWarriorImage = await images.load('monsters/miniboss_goblin_warrior.png'); } catch (_) {}
+    try { minibossSkullWarriorImage = await images.load('monsters/miniboss_skull_warrior.png'); } catch (_) {}
+    try { minibossSlimeKingImage = await images.load('monsters/miniboss_slime_king.png'); } catch (_) {}
+
+    // 보스 스프라이트
+    try { bossCerberusImage = await images.load('monsters/boss_cerberus.png'); } catch (_) {}
+    try { bossPoisonWarriorImage = await images.load('monsters/boss_poison_warrior.png'); } catch (_) {}
+
+    // 속성별 미니보스
+    for (final elem in ['fire', 'water', 'earth', 'dark']) {
+      try {
+        final img = await images.load('monsters/miniboss_cerberus_$elem.png');
+        minibossElementImages[elem] = img;
+      } catch (_) {}
+    }
+  }
+
+  // 캐릭터 스프라이트 일괄 로드 (16종 + 메인)
+  Future<void> _loadCharacterSprites() async {
+    final names = [
+      'warrior', 'guardian', 'berserker', 'archer', 'gunslinger', 'rogue',
+      'pyromancer', 'cryomancer', 'warlock', 'priest', 'druid', 'paladin',
+      'alchemist', 'engineer', 'necromancer', 'summoner', 'main_character',
+    ];
+    for (final name in names) {
+      try {
+        characterImages[name] = await images.load('characters/$name.png');
+      } catch (_) {}
+    }
+  }
+
+  // 성 요새 스프라이트 로드
+  Future<void> _loadCastleFortressSprite() async {
+    try {
+      castleFortressImage = await images.load('characters/castle_fortress.png');
+    } catch (_) {}
   }
 
   // 캐릭터 슬롯 초기화 (처음에는 모두 비어있음)

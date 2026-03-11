@@ -3,6 +3,124 @@ part of '../castle_defense_game.dart';
 
 extension UIRendering on CastleDefenseGame {
   // -----------------------------
+  // 이미지 캐시 헬퍼 (null 반환 시 Canvas 폴백)
+  // -----------------------------
+  Image? _tryGetImage(String path) {
+    try {
+      return images.fromCache(path);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 이미지 아이콘 그리기 헬퍼 (이미지 없으면 fallbackEmoji로 폴백)
+  void _drawImageIcon(
+    Canvas canvas,
+    String imagePath,
+    Offset center,
+    double iconSize, {
+    String fallbackEmoji = '',
+    double alpha = 1.0,
+  }) {
+    final img = _tryGetImage(imagePath);
+    if (img != null) {
+      final srcRect = Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble());
+      final dstRect = Rect.fromCenter(center: center, width: iconSize, height: iconSize);
+      final paint = Paint()..color = Color.fromRGBO(255, 255, 255, alpha);
+      canvas.drawImageRect(img, srcRect, dstRect, paint);
+    } else if (fallbackEmoji.isNotEmpty) {
+      _drawCenteredText(canvas, fallbackEmoji, center, fontSize: iconSize * 0.7);
+    }
+  }
+
+  /// 이미지 패널/카드 배경 그리기 (drawImageRect 스트레치)
+  void _drawImagePanel(Canvas canvas, String imagePath, Rect rect, {double alpha = 1.0}) {
+    final img = _tryGetImage(imagePath);
+    if (img != null) {
+      final srcRect = Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble());
+      final paint = Paint()..color = Color.fromRGBO(255, 255, 255, alpha);
+      canvas.drawImageRect(img, srcRect, rect, paint);
+    }
+  }
+
+  /// 이미지 바 그리기 (배경 + 필 비율)
+  void _drawImageBar(
+    Canvas canvas,
+    String bgPath,
+    String fillPath,
+    Rect barRect,
+    double ratio, {
+    Color? fallbackBgColor,
+    Color? fallbackFillColor,
+  }) {
+    final bgImg = _tryGetImage(bgPath);
+    final fillImg = _tryGetImage(fillPath);
+
+    if (bgImg != null && fillImg != null) {
+      // 배경 이미지
+      final bgSrc = Rect.fromLTWH(0, 0, bgImg.width.toDouble(), bgImg.height.toDouble());
+      canvas.drawImageRect(bgImg, bgSrc, barRect, Paint());
+
+      // 필 이미지 (비율에 맞게 클리핑)
+      if (ratio > 0) {
+        final clampedRatio = ratio.clamp(0.0, 1.0);
+        final fillRect = Rect.fromLTWH(barRect.left, barRect.top, barRect.width * clampedRatio, barRect.height);
+        final fillSrcW = fillImg.width.toDouble() * clampedRatio;
+        final fillSrc = Rect.fromLTWH(0, 0, fillSrcW, fillImg.height.toDouble());
+        canvas.drawImageRect(fillImg, fillSrc, fillRect, Paint());
+      }
+    } else {
+      // 폴백: Canvas 직접 그리기
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(barRect, const Radius.circular(3)),
+        Paint()..color = fallbackBgColor ?? const Color(0xFF333333),
+      );
+      if (ratio > 0) {
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(barRect.left, barRect.top, barRect.width * ratio.clamp(0.0, 1.0), barRect.height),
+            const Radius.circular(3),
+          ),
+          Paint()..color = fallbackFillColor ?? const Color(0xFF4CAF50),
+        );
+      }
+    }
+  }
+
+  /// 이미지 버튼 그리기 헬퍼
+  void _drawImageButton(
+    Canvas canvas,
+    String imagePath,
+    Rect rect,
+    String label, {
+    bool enabled = true,
+    double fontSize = 16,
+    Color textColor = const Color(0xFFFFFFFF),
+  }) {
+    final img = _tryGetImage(imagePath);
+    if (img != null) {
+      final srcRect = Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble());
+      final paint = Paint()..color = Color.fromRGBO(255, 255, 255, enabled ? 1.0 : 0.5);
+      canvas.drawImageRect(img, srcRect, rect, paint);
+    } else {
+      // 폴백: Canvas 직접 그리기
+      final bgColor = enabled ? const Color(0xFF5B21B6) : const Color(0xFFB0BEC5);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(8)),
+        Paint()..color = bgColor,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(8)),
+        Paint()
+          ..color = const Color(0xFFFFFFFF)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
+    }
+    _drawCenteredText(canvas, label, rect.center, fontSize: fontSize, color: textColor);
+  }
+
+  // -----------------------------
   // 상태별 오버레이
   // -----------------------------
   void _renderGameStateOverlay(Canvas canvas) {
@@ -71,9 +189,20 @@ extension UIRendering on CastleDefenseGame {
           Paint()..color = Color.fromRGBO(255, 215, 0, ga));
       }
 
-      // 카드 배경 + 테두리
-      canvas.drawRRect(RRect.fromRectAndRadius(cRect, const Radius.circular(10)),
-          Paint()..color = bg);
+      // 카드 배경 (이미지 패널 우선, 폴백 Canvas)
+      final String panelAsset;
+      switch (aug.tier) {
+        case AugmentTier.legendary: panelAsset = 'ui/panel_dark_yellow.png'; break;
+        case AugmentTier.rare:      panelAsset = 'ui/panel_dark_blue.png'; break;
+        default:                    panelAsset = 'ui/panel_dark.png';
+      }
+      final panelImg = _tryGetImage(panelAsset);
+      if (panelImg != null) {
+        _drawImagePanel(canvas, panelAsset, cRect);
+      } else {
+        canvas.drawRRect(RRect.fromRectAndRadius(cRect, const Radius.circular(10)),
+            Paint()..color = bg);
+      }
       canvas.drawRRect(RRect.fromRectAndRadius(cRect, const Radius.circular(10)),
           Paint()
             ..color = brd
@@ -88,9 +217,15 @@ extension UIRendering on CastleDefenseGame {
       canvas.drawLine(Offset(cX + 8, cY + 29), Offset(cX + cW - 8, cY + 29),
           Paint()..color = brd.withValues(alpha: 0.4)..strokeWidth = 0.8);
 
-      // 카테고리 아이콘 + 이름 + 설명
-      _drawCenteredText(canvas, _augmentCategoryIcon(aug.category),
-          Offset(cX + cW / 2, cY + 52), fontSize: 24);
+      // 카테고리 아이콘 (이미지 우선) + 이름 + 설명
+      final catImgPath = _augmentCategoryImagePath(aug.category);
+      if (catImgPath != null) {
+        _drawImageIcon(canvas, catImgPath, Offset(cX + cW / 2, cY + 52), 28,
+            fallbackEmoji: _augmentCategoryIcon(aug.category));
+      } else {
+        _drawCenteredText(canvas, _augmentCategoryIcon(aug.category),
+            Offset(cX + cW / 2, cY + 52), fontSize: 24);
+      }
       _drawCenteredText(canvas, aug.nameJp,
           Offset(cX + cW / 2, cY + 82), fontSize: 13, color: const Color(0xFFFFFFFF));
       _drawCenteredText(canvas, aug.description,
@@ -104,7 +239,7 @@ extension UIRendering on CastleDefenseGame {
         color: Color.fromRGBO(200, 200, 200, 0.6 + 0.4 * sin(gameTime * 2)));
   }
 
-  // 증강 카테고리 아이콘 헬퍼
+  // 증강 카테고리 아이콘 헬퍼 (이미지 우선, 폴백 이모지)
   String _augmentCategoryIcon(AugmentCategory cat) {
     switch (cat) {
       case AugmentCategory.main:      return '⚔️';
@@ -115,6 +250,20 @@ extension UIRendering on CastleDefenseGame {
       case AugmentCategory.elemental: return '🌟';
       case AugmentCategory.special:   return '✨';
       case AugmentCategory.synergy:   return '🔗';
+    }
+  }
+
+  /// 증강 카테고리 이미지 경로 (null이면 폴백 이모지 사용)
+  String? _augmentCategoryImagePath(AugmentCategory cat) {
+    switch (cat) {
+      case AugmentCategory.main:      return 'ui/icon_attack.png';
+      case AugmentCategory.tower:     return 'ui/icon_tower.png';
+      case AugmentCategory.castle:    return 'ui/icon_heal.png';
+      case AugmentCategory.utility:   return 'ui/icon_settings.png';
+      case AugmentCategory.economy:   return 'ui/icon_coin.png';
+      case AugmentCategory.elemental: return 'ui/icon_energy.png';
+      case AugmentCategory.special:   return 'ui/icon_crown.png';
+      case AugmentCategory.synergy:   return 'ui/icon_gem.png';
     }
   }
 
@@ -140,23 +289,31 @@ extension UIRendering on CastleDefenseGame {
       color: const Color(0xFFFFD700),
     );
 
-    // 골드 표시 패널
+    // 골드 표시 패널 (이미지 패널 우선)
     final goldPanelRect = Rect.fromLTWH(size.x / 2 - 70, size.y * 0.14, 140, 28);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(goldPanelRect, const Radius.circular(14)),
-      Paint()..color = const Color(0xFF2A1C00),
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(goldPanelRect, const Radius.circular(14)),
-      Paint()
-        ..color = const Color(0xFFFFD700)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
-    );
+    final goldPanelImg = _tryGetImage('ui/panel_dark_yellow.png');
+    if (goldPanelImg != null) {
+      _drawImagePanel(canvas, 'ui/panel_dark_yellow.png', goldPanelRect);
+    } else {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(goldPanelRect, const Radius.circular(14)),
+        Paint()..color = const Color(0xFF2A1C00),
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(goldPanelRect, const Radius.circular(14)),
+        Paint()
+          ..color = const Color(0xFFFFD700)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
+    }
+    // 코인 아이콘 + 골드 텍스트
+    _drawImageIcon(canvas, 'icons/icon_hud_coin.png',
+        Offset(size.x / 2 - 40, size.y * 0.19 + 14), 18, fallbackEmoji: '🪙');
     _drawCenteredText(
       canvas,
-      '🪙  $playerGold G',
-      Offset(size.x / 2, size.y * 0.19 + 14),
+      '  $playerGold G',
+      Offset(size.x / 2 + 6, size.y * 0.19 + 14),
       fontSize: 14,
       color: const Color(0xFFFFD700),
     );
@@ -164,6 +321,8 @@ extension UIRendering on CastleDefenseGame {
     // 상점 아이템 3개
     const List<String> names  = ['城 最大HP +20', 'タワー 攻撃力 +5%', 'メインHP +10'];
     const List<String> icons  = ['🏰', '🗼', '🧑'];
+    // 아이콘 이미지 경로 (이미지 우선, 폴백 이모지)
+    const List<String> iconImages = ['ui/icon_heal.png', 'ui/icon_tower.png', 'icons/icon_heart.png'];
     const List<int>    prices = [50, 30, 20];
     final List<int> counts    = [_shopCastleMaxHpCount, _shopTowerPowerCount, _shopMainCharHpCount];
     const List<int> maxes     = [10, 10, 5];
@@ -190,11 +349,17 @@ extension UIRendering on CastleDefenseGame {
       final double cardH = 70.0;
       final cardRect = Rect.fromLTWH(20, centerYs[i] - cardH / 2, size.x - 40, cardH);
 
-      // 카드 배경
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(cardRect, const Radius.circular(10)),
-        Paint()..color = bgColor,
-      );
+      // 카드 배경 (이미지 패널 우선)
+      final cardPanelAsset = affordable ? 'ui/panel_dark_purple.png' : 'ui/panel_dark.png';
+      final cardPanelImg = _tryGetImage(cardPanelAsset);
+      if (cardPanelImg != null) {
+        _drawImagePanel(canvas, cardPanelAsset, cardRect, alpha: maxed ? 0.5 : 1.0);
+      } else {
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(cardRect, const Radius.circular(10)),
+          Paint()..color = bgColor,
+        );
+      }
       // 카드 테두리
       canvas.drawRRect(
         RRect.fromRectAndRadius(cardRect, const Radius.circular(10)),
@@ -204,12 +369,13 @@ extension UIRendering on CastleDefenseGame {
           ..strokeWidth = 1.5,
       );
 
-      // 아이콘
-      _drawCenteredText(
+      // 아이콘 (이미지 우선)
+      _drawImageIcon(
         canvas,
-        icons[i],
+        iconImages[i],
         Offset(cardRect.left + 35, centerYs[i]),
-        fontSize: 22,
+        26,
+        fallbackEmoji: icons[i],
       );
 
       // 아이템 이름
@@ -248,28 +414,11 @@ extension UIRendering on CastleDefenseGame {
       );
     }
 
-    // 계속 버튼 (y > 0.80)
+    // 계속 버튼 (y > 0.80) — 이미지 버튼 우선
     final continueRect = Rect.fromLTWH(
       (size.x - 200) / 2, size.y * 0.84, 200, 44,
     );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(continueRect, const Radius.circular(22)),
-      Paint()..color = const Color(0xFF5B21B6),
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(continueRect, const Radius.circular(22)),
-      Paint()
-        ..color = const Color(0xFFD946EF)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.0,
-    );
-    _drawCenteredText(
-      canvas,
-      '続ける  →',
-      continueRect.center,
-      fontSize: 16,
-      color: const Color(0xFFFFFFFF),
-    );
+    _drawImageButton(canvas, 'ui/btn_violet.png', continueRect, '続ける  →');
   }
 
   void _renderLoadingOverlay(Canvas canvas) {
@@ -289,19 +438,16 @@ extension UIRendering on CastleDefenseGame {
 
     final double progress = (_loadingTimer / _loadingDuration).clamp(0.0, 1.0);
 
-    final bgPaint = Paint()..color = const Color(0xFF424242);
-    final fgPaint = Paint()..color = const Color(0xFF42A5F5);
-
-    final bgRect = Rect.fromLTWH(barX, barY, barWidth, barHeight);
-    canvas.drawRect(bgRect, bgPaint);
-
-    final fgRect = Rect.fromLTWH(
-      barX,
-      barY,
-      barWidth * progress,
-      barHeight,
+    // 로딩 바 (이미지 바 우선)
+    _drawImageBar(
+      canvas,
+      'ui/bar_background.png',
+      'ui/bar_blue.png',
+      Rect.fromLTWH(barX, barY, barWidth, barHeight),
+      progress,
+      fallbackBgColor: const Color(0xFF424242),
+      fallbackFillColor: const Color(0xFF42A5F5),
     );
-    canvas.drawRect(fgRect, fgPaint);
   }
 
   // 네비게이션 바 렌더링
@@ -377,18 +523,20 @@ extension UIRendering on CastleDefenseGame {
     const double resourceSpacing = 70.0;
     final resourceStartX = size.x - padding - (resourceSpacing * 3) + 10;
 
-    // 골드
-    _renderResourceHorizontal(
+    // 골드 (이미지 아이콘 우선)
+    _renderResourceHorizontalImg(
       canvas,
       Offset(resourceStartX, navBarHeight / 2),
+      'icons/icon_hud_coin.png',
       '💰',
       _formatNumber(playerGold),
     );
 
-    // 젬
-    _renderResourceHorizontal(
+    // 젬 (이미지 아이콘 우선)
+    _renderResourceHorizontalImg(
       canvas,
       Offset(resourceStartX + resourceSpacing, navBarHeight / 2),
+      'icons/icon_hud_gem.png',
       '💎',
       _formatNumber(playerGem),
     );
@@ -428,6 +576,28 @@ extension UIRendering on CastleDefenseGame {
       fontSize: 16,
       color: const Color(0xFF000000),
     );
+
+    // 값
+    _drawCenteredText(
+      canvas,
+      value,
+      Offset(position.dx, position.dy + 8),
+      fontSize: 11,
+      color: const Color(0xFF424242),
+    );
+  }
+
+  // 개별 리소스 렌더링 헬퍼 (이미지 아이콘 우선)
+  void _renderResourceHorizontalImg(
+    Canvas canvas,
+    Offset position,
+    String imagePath,
+    String fallbackEmoji,
+    String value,
+  ) {
+    // 아이콘 (이미지 우선)
+    _drawImageIcon(canvas, imagePath,
+        Offset(position.dx, position.dy - 8), 18, fallbackEmoji: fallbackEmoji);
 
     // 값
     _drawCenteredText(
@@ -1770,13 +1940,13 @@ extension UIRendering on CastleDefenseGame {
       borderPaint,
     );
 
-    // 메뉴 아이템들
+    // 메뉴 아이템들 (이미지 아이콘 경로 추가)
     final menuItems = [
-      {'icon': '🏪', 'label': 'ショップ', 'menu': BottomMenu.shop},
-      {'icon': '🎒', 'label': 'インベントリ', 'menu': BottomMenu.inventory},
-      {'icon': '🏠', 'label': 'ホーム', 'menu': BottomMenu.home},
-      {'icon': '🎰', 'label': 'ガチャ', 'menu': BottomMenu.gacha},
-      {'icon': '⚙️', 'label': '設定', 'menu': BottomMenu.settings},
+      {'icon': '🏪', 'img': 'icons/icon_hud_shop.png', 'label': 'ショップ', 'menu': BottomMenu.shop},
+      {'icon': '🎒', 'img': 'icons/icon_shield.png', 'label': 'インベントリ', 'menu': BottomMenu.inventory},
+      {'icon': '🏠', 'img': 'icons/icon_crown.png', 'label': 'ホーム', 'menu': BottomMenu.home},
+      {'icon': '🎰', 'img': 'icons/icon_gem.png', 'label': 'ガチャ', 'menu': BottomMenu.gacha},
+      {'icon': '⚙️', 'img': 'icons/icon_settings.png', 'label': '設定', 'menu': BottomMenu.settings},
     ];
 
     for (int i = 0; i < menuItems.length; i++) {
@@ -1790,13 +1960,14 @@ extension UIRendering on CastleDefenseGame {
         canvas.drawRect(rect, selectedBgPaint);
       }
 
-      // 아이콘
-      _drawCenteredText(
+      // 아이콘 (이미지 우선)
+      _drawImageIcon(
         canvas,
-        item['icon'] as String,
+        item['img'] as String,
         Offset(rect.center.dx, rect.center.dy - 12),
-        fontSize: 24,
-        color: isSelected ? const Color(0xFF1976D2) : const Color(0xFF666666),
+        26,
+        fallbackEmoji: item['icon'] as String,
+        alpha: isSelected ? 1.0 : 0.5,
       );
 
       // 라벨
@@ -1905,7 +2076,7 @@ extension UIRendering on CastleDefenseGame {
       }
     }
 
-    // 다음 라운드 카운트다운 바
+    // 다음 라운드 카운트다운 바 (이미지 바 우선)
     final double progressRatio = _roundClearDuration > 0
         ? (1.0 - _roundClearTimer / _roundClearDuration).clamp(0.0, 1.0)
         : 0.0;
@@ -1914,13 +2085,14 @@ extension UIRendering on CastleDefenseGame {
     final double barX = size.x / 2 - barW / 2;
     final double barY = size.y * 0.64;
 
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(barX, barY, barW, barH), const Radius.circular(3)),
-      Paint()..color = const Color(0xFF333333),
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(barX, barY, barW * progressRatio, barH), const Radius.circular(3)),
-      Paint()..color = const Color(0xFF4CAF50),
+    _drawImageBar(
+      canvas,
+      'ui/bar_background.png',
+      'ui/bar_green.png',
+      Rect.fromLTWH(barX, barY, barW, barH),
+      progressRatio,
+      fallbackBgColor: const Color(0xFF333333),
+      fallbackFillColor: const Color(0xFF4CAF50),
     );
 
     _drawCenteredText(
@@ -1948,52 +2120,19 @@ extension UIRendering on CastleDefenseGame {
       color: const Color(0xFFFFFFFF),
     );
 
-    // 버튼 그리기
+    // 버튼 그리기 (이미지 버튼 우선)
     final resumeRect = _pauseResumeButtonRect();
     final roundSelectRect = _pauseRoundSelectButtonRect();
     final retryRect = _pauseRetryButtonRect();
 
-    final buttonPaint = Paint()..color = const Color(0xFF424242);
-    final buttonTextColor = const Color(0xFFFFFFFF);
-
     // 재개 버튼
-    canvas.drawRect(resumeRect, buttonPaint);
-    _drawCenteredText(
-      canvas,
-      '再開',
-      Offset(
-        resumeRect.left + resumeRect.width / 2,
-        resumeRect.top + resumeRect.height / 2 - 8,
-      ),
-      fontSize: 18,
-      color: buttonTextColor,
-    );
+    _drawImageButton(canvas, 'ui/btn_green.png', resumeRect, '再開', fontSize: 18);
 
     // 라운드 선택 버튼
-    canvas.drawRect(roundSelectRect, buttonPaint);
-    _drawCenteredText(
-      canvas,
-      'ラウンド選択',
-      Offset(
-        roundSelectRect.left + roundSelectRect.width / 2,
-        roundSelectRect.top + roundSelectRect.height / 2 - 8,
-      ),
-      fontSize: 18,
-      color: buttonTextColor,
-    );
+    _drawImageButton(canvas, 'ui/btn_blue.png', roundSelectRect, 'ラウンド選択', fontSize: 18);
 
     // 재시작 버튼
-    canvas.drawRect(retryRect, buttonPaint);
-    _drawCenteredText(
-      canvas,
-      'リスタート',
-      Offset(
-        retryRect.left + retryRect.width / 2,
-        retryRect.top + retryRect.height / 2 - 8,
-      ),
-      fontSize: 18,
-      color: buttonTextColor,
-    );
+    _drawImageButton(canvas, 'ui/btn_red.png', retryRect, 'リスタート', fontSize: 18);
   }
 
   void _renderResultOverlay(Canvas canvas) {
@@ -2035,12 +2174,12 @@ extension UIRendering on CastleDefenseGame {
     final roundSelectRect = _resultRoundSelectButtonRect();
     final nextRect = _resultNextRoundButtonRect();
 
-    _drawButton(canvas, retryRect, 'もう一度');
-    _drawButton(canvas, roundSelectRect, 'ステージ選択');
+    _drawImageButton(canvas, 'ui/btn_violet.png', retryRect, 'もう一度');
+    _drawImageButton(canvas, 'ui/btn_violet.png', roundSelectRect, 'ステージ選択');
 
     final nextRound = currentRound + 1;
     if (nextRound <= totalRoundsInStage) {
-      _drawButton(canvas, nextRect, '次のラウンド', enabled: true);
+      _drawImageButton(canvas, 'ui/btn_green.png', nextRect, '次のラウンド');
     }
   }
 
@@ -2098,11 +2237,11 @@ extension UIRendering on CastleDefenseGame {
     final retryRect  = _resultRetryButtonRect();
     final selectRect = _resultRoundSelectButtonRect();
 
-    _drawButton(canvas, retryRect, 'もう一度');
-    _drawButton(canvas, selectRect, 'ステージ選択');
+    _drawImageButton(canvas, 'ui/btn_red.png', retryRect, 'もう一度');
+    _drawImageButton(canvas, 'ui/btn_violet.png', selectRect, 'ステージ選択');
   }
 
-  // 별 렌더링
+  // 별 렌더링 (이미지 우선)
   void _renderStars(Canvas canvas, int starCount, Offset center) {
     const double starSize = 30.0;
     const double starSpacing = 45.0;
@@ -2114,23 +2253,13 @@ extension UIRendering on CastleDefenseGame {
       final starCenter = Offset(x, center.dy);
 
       if (i < starCount) {
-        // 획득한 별 (노란색)
-        _drawCenteredText(
-          canvas,
-          '★',
-          starCenter,
-          fontSize: starSize,
-          color: const Color(0xFFFFD700),
-        );
+        // 획득한 별 (이미지 우선)
+        _drawImageIcon(canvas, 'ui/star_filled.png', starCenter, starSize,
+            fallbackEmoji: '★');
       } else {
-        // 획득하지 못한 별 (회색)
-        _drawCenteredText(
-          canvas,
-          '☆',
-          starCenter,
-          fontSize: starSize,
-          color: const Color(0xFF757575),
-        );
+        // 획득하지 못한 별 (이미지 우선)
+        _drawImageIcon(canvas, 'ui/star_empty.png', starCenter, starSize,
+            fallbackEmoji: '☆');
       }
     }
   }
@@ -2144,22 +2273,28 @@ extension UIRendering on CastleDefenseGame {
     String label, {
     bool enabled = true,
   }) {
-    // D-05: Violet Theme 통일 (#3949AB → #5B21B6)
-    final bgColor = enabled ? const Color(0xFF5B21B6) : const Color(0xFFB0BEC5);
+    // 이미지 버튼 우선 (Violet Theme)
+    final btnAsset = enabled
+        ? (label.contains('もう一度') ? 'ui/btn_red.png' : 'ui/btn_violet.png')
+        : 'ui/btn_disabled.png';
+    final btnImg = _tryGetImage(btnAsset);
 
-    final bgPaint = Paint()..color = bgColor;
-    final borderPaint = Paint()
-      ..color = const Color(0xFFFFFFFF)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-
-    final rrect = RRect.fromRectAndRadius(
-      rect,
-      const Radius.circular(8),
-    );
-
-    canvas.drawRRect(rrect, bgPaint);
-    canvas.drawRRect(rrect, borderPaint);
+    if (btnImg != null) {
+      final srcRect = Rect.fromLTWH(0, 0, btnImg.width.toDouble(), btnImg.height.toDouble());
+      final paint = Paint()..color = Color.fromRGBO(255, 255, 255, enabled ? 1.0 : 0.5);
+      canvas.drawImageRect(btnImg, srcRect, rect, paint);
+    } else {
+      // 폴백: Canvas 직접 그리기
+      final bgColor = enabled ? const Color(0xFF5B21B6) : const Color(0xFFB0BEC5);
+      final bgPaint = Paint()..color = bgColor;
+      final borderPaint = Paint()
+        ..color = const Color(0xFFFFFFFF)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5;
+      final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(8));
+      canvas.drawRRect(rrect, bgPaint);
+      canvas.drawRRect(rrect, borderPaint);
+    }
 
     _drawCenteredText(
       canvas,
@@ -2322,16 +2457,12 @@ extension UIRendering on CastleDefenseGame {
       );
     }
 
-    // 스킬 아이콘 이모지 (준비 완료 시 밝게)
-    final iconColor = skillReady
-        ? const Color(0xFFFFFFFF)
-        : const Color(0xAAFFFFFF);
-    _drawCenteredText(
-      canvas,
-      skillReady ? '💥' : '⚡',
-      Offset(center.dx, center.dy - 6),
-      fontSize: 20,
-      color: iconColor,
+    // 스킬 아이콘 (이미지 우선)
+    final skillIconPath = skillReady ? 'icons/icon_skill_bomb.png' : 'ui/icon_skill.png';
+    _drawImageIcon(
+      canvas, skillIconPath,
+      Offset(center.dx, center.dy - 6), 24,
+      fallbackEmoji: skillReady ? '💥' : '⚡',
     );
 
     // 게이지 퍼센트 텍스트
@@ -2387,11 +2518,13 @@ extension UIRendering on CastleDefenseGame {
       borderPaint,
     );
 
-    // 코인 이모지 + 골드 수치
+    // 코인 아이콘 + 골드 수치 (이미지 우선)
+    _drawImageIcon(canvas, 'icons/icon_hud_coin.png',
+        Offset(x - 22, y), 16, fallbackEmoji: '🪙');
     _drawCenteredText(
       canvas,
-      '🪙${playerGold}G',
-      Offset(x, y),
+      '${playerGold}G',
+      Offset(x + 6, y),
       fontSize: 13,
       color: const Color(0xFFFFD700),
     );
@@ -2515,17 +2648,7 @@ extension UIRendering on CastleDefenseGame {
     final double barX = cx - barWidth / 2;
     final double barY = castleTop - barHeight - barMargin;
 
-    // 배경 바
-    final bgPaint = Paint()..color = const Color(0xFF333333);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(barX, barY, barWidth, barHeight),
-        const Radius.circular(3),
-      ),
-      bgPaint,
-    );
-
-    // HP 색상: hpGreen → hpYellow → hpRed
+    // 성 HP 바 (이미지 바 우선)
     final Color barColor;
     if (hpRatio > 0.66) {
       barColor = const Color(0xFF4CAF50);
@@ -2535,20 +2658,24 @@ extension UIRendering on CastleDefenseGame {
       barColor = const Color(0xFFF44336);
     }
 
-    final fgPaint = Paint()..color = barColor;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(barX, barY, barWidth * hpRatio, barHeight),
-        const Radius.circular(3),
-      ),
-      fgPaint,
+    final castleHpFillPath = hpRatio > 0.33 ? 'ui/hp_bar_fill_green.png' : 'ui/hp_bar_fill.png';
+    _drawImageBar(
+      canvas,
+      'ui/hp_bar_bg.png',
+      castleHpFillPath,
+      Rect.fromLTWH(barX, barY, barWidth, barHeight),
+      hpRatio,
+      fallbackBgColor: const Color(0xFF333333),
+      fallbackFillColor: barColor,
     );
 
-    // HP 수치 텍스트
+    // HP 수치 텍스트 (아이콘 이미지 우선)
+    _drawImageIcon(canvas, 'ui/icon_heal.png',
+        Offset(cx - 42, barY - 10), 14, fallbackEmoji: '🏰');
     _drawCenteredText(
       canvas,
-      '🏰 $castleHp / $castleMaxHp',
-      Offset(cx, barY - 10),
+      '$castleHp / $castleMaxHp',
+      Offset(cx + 6, barY - 10),
       fontSize: 11,
       color: const Color(0xFFFFFFFF),
     );
@@ -2595,19 +2722,10 @@ extension UIRendering on CastleDefenseGame {
       );
     }
 
-    // HP 바 (_mainCharHp/_mainCharMaxHp 사용 - B-2-6 실제 HP 상태 반영)
+    // HP 바 (이미지 바 우선, 폴백 Canvas)
     final double hpRatio =
         (_mainCharHp / _mainCharMaxHp).clamp(0.0, 1.0);
     final double hpBarX = leftPad + 24;
-
-    final hpBgPaint = Paint()..color = const Color(0xFF333333);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(hpBarX, row1Y, hpBarW, barHeight),
-        const Radius.circular(3),
-      ),
-      hpBgPaint,
-    );
 
     final Color hpColor;
     if (hpRatio > 0.66) {
@@ -2618,13 +2736,16 @@ extension UIRendering on CastleDefenseGame {
       hpColor = const Color(0xFFF44336);
     }
 
-    final hpFgPaint = Paint()..color = hpColor;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(hpBarX, row1Y, hpBarW * hpRatio, barHeight),
-        const Radius.circular(3),
-      ),
-      hpFgPaint,
+    // HP바: 비율에 따라 초록/빨강 선택
+    final hpFillPath = hpRatio > 0.33 ? 'ui/hp_bar_fill_green.png' : 'ui/hp_bar_fill.png';
+    _drawImageBar(
+      canvas,
+      'ui/hp_bar_bg.png',
+      hpFillPath,
+      Rect.fromLTWH(hpBarX, row1Y, hpBarW, barHeight),
+      hpRatio,
+      fallbackBgColor: const Color(0xFF333333),
+      fallbackFillColor: hpColor,
     );
 
     // HP 수치 (_mainCharHp 실제 값 사용)
@@ -2637,47 +2758,48 @@ extension UIRendering on CastleDefenseGame {
       color: const Color(0xFFFFFFFF),
     );
 
-    // 속성 아이콘 (HP 바 오른쪽)
+    // 속성 아이콘 (HP 바 오른쪽, 이미지 우선)
     if (_mainCharElement != ElementType.none) {
-      _drawCenteredText(
-        canvas,
-        _mainCharElement.emoji,
-        Offset(hpBarX + hpBarW + 12, row1Y + 4),
-        fontSize: 14,
-      );
+      final elemImgPath = _elementImagePath(_mainCharElement);
+      if (elemImgPath != null) {
+        _drawImageIcon(canvas, elemImgPath,
+            Offset(hpBarX + hpBarW + 12, row1Y + 4), 16,
+            fallbackEmoji: _mainCharElement.emoji);
+      } else {
+        _drawCenteredText(
+          canvas,
+          _mainCharElement.emoji,
+          Offset(hpBarX + hpBarW + 12, row1Y + 4),
+          fontSize: 14,
+        );
+      }
     }
 
-    // Lv 표시 (중앙 상단)
+    // Lv 표시 (중앙 상단, 이미지 아이콘 우선)
+    _drawImageIcon(canvas, 'icons/icon_hud_star.png',
+        Offset(size.x / 2 - 28, row1Y + 4), 14, fallbackEmoji: '⭐');
     _drawCenteredText(
       canvas,
       'Lv.$playerLevel',
-      Offset(size.x / 2, row1Y + 4),
+      Offset(size.x / 2 + 4, row1Y + 4),
       fontSize: 13,
       color: const Color(0xFFFFD700),
     );
 
-    // XP 바 (우측, 플레이스홀더)
+    // XP 바 (이미지 바 우선)
     const double xpBarW = 90.0;
     final double xpBarX = size.x - leftPad - xpBarW;
-    final xpBgPaint = Paint()..color = const Color(0xFF333333);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(xpBarX, row1Y, xpBarW, barHeight),
-        const Radius.circular(3),
-      ),
-      xpBgPaint,
-    );
-    // 리디자인 B-2-10: XP 바 (실제 playerXp/playerCharLevel 연결)
     final double xpRatio = _xpToNextLevel() > 0
         ? (playerXp / _xpToNextLevel()).clamp(0.0, 1.0)
         : 0.0;
-    final xpFgPaint = Paint()..color = const Color(0xFF2196F3);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(xpBarX, row1Y, xpBarW * xpRatio, barHeight),
-        const Radius.circular(3),
-      ),
-      xpFgPaint,
+    _drawImageBar(
+      canvas,
+      'ui/hp_bar_bg.png',
+      'ui/xp_bar_fill.png',
+      Rect.fromLTWH(xpBarX, row1Y, xpBarW, barHeight),
+      xpRatio,
+      fallbackBgColor: const Color(0xFF333333),
+      fallbackFillColor: const Color(0xFF2196F3),
     );
     _drawText(
       canvas,
@@ -2690,25 +2812,29 @@ extension UIRendering on CastleDefenseGame {
     // ── 2행: 몬스터수 | 타이머 | 스테이지 ──
     const double row2Y = topPad + 24;
 
-    // 좌측: 몬스터 수 (처치/총수)
+    // 좌측: 몬스터 수 (이미지 아이콘 우선)
     final int remaining = totalMonstersInRound - defeatedMonsters;
+    _drawImageIcon(canvas, 'icons/icon_skull.png',
+        Offset(leftPad + 8, row2Y + 8), 14, fallbackEmoji: '👾');
     _drawText(
       canvas,
-      '👾 $remaining',
-      Offset(leftPad, row2Y + 4),
+      ' $remaining',
+      Offset(leftPad + 18, row2Y + 4),
       fontSize: 12,
       color: const Color(0xFFFFFFFF),
     );
 
-    // 중앙: 경과 타이머 (M:SS)
+    // 중앙: 경과 타이머 (이미지 아이콘 우선)
     final int totalSec = roundTimer.toInt();
     final int minutes = totalSec ~/ 60;
     final int seconds = totalSec % 60;
-    final String timerText = '⏱ $minutes:${seconds.toString().padLeft(2, '0')}';
+    final String timerText = '$minutes:${seconds.toString().padLeft(2, '0')}';
+    _drawImageIcon(canvas, 'icons/icon_timer.png',
+        Offset(size.x / 2 - 26, row2Y + 4), 14, fallbackEmoji: '⏱');
     _drawCenteredText(
       canvas,
       timerText,
-      Offset(size.x / 2, row2Y + 4),
+      Offset(size.x / 2 + 4, row2Y + 4),
       fontSize: 12,
       color: const Color(0xFFFFFFFF),
     );
@@ -2734,6 +2860,18 @@ extension UIRendering on CastleDefenseGame {
       case ElementType.electric: return '⚡';
       case ElementType.dark:     return '🌑';
       case ElementType.none:     return '';
+    }
+  }
+
+  // 속성 이미지 경로 헬퍼
+  String? _elementImagePath(ElementType e) {
+    switch (e) {
+      case ElementType.fire:     return 'ui/icon_fire.png';
+      case ElementType.water:    return 'ui/icon_water.png';
+      case ElementType.earth:    return 'ui/icon_earth.png';
+      case ElementType.electric: return 'ui/icon_electric.png';
+      case ElementType.dark:     return 'ui/icon_dark.png';
+      case ElementType.none:     return null;
     }
   }
 

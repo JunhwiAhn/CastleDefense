@@ -269,12 +269,14 @@ extension GameRendering on CastleDefenseGame {
       castleRoofColor = const Color(0xFF5D2626);
     }
 
-    if (castleImageLoaded && castleImage != null) {
-      // D-4-1: 참조 에셋 스프라이트로 성 렌더링
+    // 성 스프라이트 선택: castleFortressImage 우선, 기존 castleImage 폴백
+    final Image? activeCastleImg = castleFortressImage ?? castleImage;
+    if (activeCastleImg != null) {
+      // 스프라이트로 성 렌더링
       final srcRect = Rect.fromLTWH(
         0, 0,
-        castleImage!.width.toDouble(),
-        castleImage!.height.toDouble(),
+        activeCastleImg.width.toDouble(),
+        activeCastleImg.height.toDouble(),
       );
       // HP 비율에 따른 색조 오버레이 알파
       final double tintAlpha = hpRatio > 0.66
@@ -282,7 +284,7 @@ extension GameRendering on CastleDefenseGame {
           : hpRatio > 0.33
               ? 0.2  // 손상: 갈색 틴트
               : 0.4; // 위기: 빨간 틴트
-      canvas.drawImageRect(castleImage!, srcRect, _castleRect, Paint());
+      canvas.drawImageRect(activeCastleImg, srcRect, _castleRect, Paint());
       if (tintAlpha > 0) {
         final tintColor = hpRatio > 0.33
             ? Color.fromRGBO(109, 76, 65, tintAlpha)    // 갈색
@@ -416,45 +418,47 @@ extension GameRendering on CastleDefenseGame {
       }
 
       // 몬스터 타입별 스프라이트 또는 폴백 드로잉
-      if (m.type == MonsterType.normal && goblinImageLoaded && goblinImage != null && stageLevel == 1) {
-        // 일반 몬스터 (Stage1): Goblin 스프라이트
-        _renderGoblinSprite(canvas, m, radius);
-      } else if (m.type == MonsterType.boss && bossMonsterImageLoaded && bossMonsterImage != null) {
-        // D-4-3: 보스 스프라이트 (통상 Goblin의 2배 크기 + 발광 오라)
+      if (m.type == MonsterType.boss) {
+        // 보스: 새 스프라이트 우선, 기존 스프라이트 폴백, Canvas 폴백
         _renderBossAura(canvas, center, radius, isBoss: true);
-        final srcRect = Rect.fromLTWH(0, 0, bossMonsterImage!.width.toDouble(), bossMonsterImage!.height.toDouble());
-        final dstRect = Rect.fromCenter(center: center, width: radius * 2.2, height: radius * 2.2);
-        final spritePaint = Paint()
-          ..color = m.damageFlashTimer > 0
-              ? const Color(0xFFFF5252)
-              : const Color(0xFFFFFFFF);
-        canvas.drawImageRect(bossMonsterImage!, srcRect, dstRect, spritePaint);
-        _renderBossCrown(canvas, center, radius, isGold: true);
-      } else if (m.type == MonsterType.miniBoss && minibossMonsterImageLoaded && minibossMonsterImage != null) {
-        // D-4-4: 미니보스 스프라이트 (통상의 1.5배 크기 + 주황 오라)
-        _renderBossAura(canvas, center, radius, isBoss: false);
-        final srcRect = Rect.fromLTWH(0, 0, minibossMonsterImage!.width.toDouble(), minibossMonsterImage!.height.toDouble());
-        final dstRect = Rect.fromCenter(center: center, width: radius * 2.2, height: radius * 2.2);
-        final spritePaint = Paint()
-          ..color = m.damageFlashTimer > 0
-              ? const Color(0xFFFF5252)
-              : const Color(0xFFFFFFFF);
-        canvas.drawImageRect(minibossMonsterImage!, srcRect, dstRect, spritePaint);
-        _renderBossCrown(canvas, center, radius, isGold: false);
-      } else if (m.type == MonsterType.boss || m.type == MonsterType.miniBoss) {
-        // D-4-3/D-4-4: 스프라이트 미로드 시 Canvas 폴백 드로잉
-        _renderBossAura(canvas, center, radius, isBoss: m.type == MonsterType.boss);
-        _renderBossMonsterFallback(canvas, center, radius,
-            isBoss: m.type == MonsterType.boss, isDamaged: m.damageFlashTimer > 0);
-        _renderBossCrown(canvas, center, radius, isGold: m.type == MonsterType.boss);
-      } else {
-        // 폴백: 원형 드로잉
-        if (m.damageFlashTimer > 0) {
-          final flashPaint = Paint()..color = const Color(0xFFFF0000);
-          canvas.drawCircle(center, radius, flashPaint);
+        final bossImg = _getBossImage();
+        if (bossImg != null) {
+          _renderMonsterSprite(canvas, bossImg, center, radius * 2.2, m.damageFlashTimer > 0);
+        } else if (bossMonsterImageLoaded && bossMonsterImage != null) {
+          _renderMonsterSprite(canvas, bossMonsterImage!, center, radius * 2.2, m.damageFlashTimer > 0);
         } else {
-          final monsterPaint = Paint()..color = monsterColor;
-          canvas.drawCircle(center, radius, monsterPaint);
+          _renderBossMonsterFallback(canvas, center, radius, isBoss: true, isDamaged: m.damageFlashTimer > 0);
+        }
+        _renderBossCrown(canvas, center, radius, isGold: true);
+      } else if (m.type == MonsterType.miniBoss) {
+        // 미니보스: 새 스프라이트 우선, 기존 스프라이트 폴백, Canvas 폴백
+        _renderBossAura(canvas, center, radius, isBoss: false);
+        final minibossImg = _getMinibossImage(m);
+        if (minibossImg != null) {
+          _renderMonsterSprite(canvas, minibossImg, center, radius * 2.2, m.damageFlashTimer > 0);
+        } else if (minibossMonsterImageLoaded && minibossMonsterImage != null) {
+          _renderMonsterSprite(canvas, minibossMonsterImage!, center, radius * 2.2, m.damageFlashTimer > 0);
+        } else {
+          _renderBossMonsterFallback(canvas, center, radius, isBoss: false, isDamaged: m.damageFlashTimer > 0);
+        }
+        _renderBossCrown(canvas, center, radius, isGold: false);
+      } else {
+        // 일반 몬스터: 스테이지별 스프라이트 선택
+        final normalImg = _getNormalMonsterImage(m);
+        if (normalImg != null) {
+          _renderNormalMonsterSprite(canvas, normalImg, m, radius);
+        } else if (goblinImageLoaded && goblinImage != null) {
+          // 기존 Goblin 스프라이트 폴백
+          _renderGoblinSprite(canvas, m, radius);
+        } else {
+          // Canvas 폴백: 원형 드로잉
+          if (m.damageFlashTimer > 0) {
+            final flashPaint = Paint()..color = const Color(0xFFFF0000);
+            canvas.drawCircle(center, radius, flashPaint);
+          } else {
+            final monsterPaint = Paint()..color = monsterColor;
+            canvas.drawCircle(center, radius, monsterPaint);
+          }
         }
       }
 
@@ -576,6 +580,116 @@ extension GameRendering on CastleDefenseGame {
     } else {
       canvas.drawImageRect(goblinImage!, srcRect, dstRect, Paint());
     }
+  }
+
+  // 몬스터 스프라이트 공통 렌더링 (drawImageRect + 데미지 플래시)
+  void _renderMonsterSprite(Canvas canvas, Image img, Offset center, double drawSize, bool isDamaged) {
+    final srcRect = Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble());
+    final dstRect = Rect.fromCenter(center: center, width: drawSize, height: drawSize);
+    if (isDamaged) {
+      final flashPaint = Paint()
+        ..colorFilter = const ColorFilter.mode(Color(0xFFFF0000), BlendMode.srcATop);
+      canvas.drawImageRect(img, srcRect, dstRect, flashPaint);
+    } else {
+      canvas.drawImageRect(img, srcRect, dstRect, Paint());
+    }
+  }
+
+  // 일반 몬스터 스프라이트 렌더링 (보행 바운스 포함)
+  void _renderNormalMonsterSprite(Canvas canvas, Image img, _Monster m, double radius) {
+    final bounceOffset = [0.0, -2.0, 0.0, 2.0][m.currentFrame];
+    final center = Offset(m.pos.x, m.pos.y + bounceOffset);
+    final drawSize = radius * 2.5;
+    _renderMonsterSprite(canvas, img, center, drawSize, m.damageFlashTimer > 0);
+  }
+
+  // 스테이지별 일반 몬스터 이미지 선택
+  Image? _getNormalMonsterImage(_Monster m) {
+    // 스테이지별 몬스터 이미지 매핑 (각 스테이지 3종, 해시 기반 선택)
+    final stageKeys = <int, List<String>>{
+      1: ['monster_stage1_rat', 'monster_stage1_slime', 'monster_stage1_worm'],
+      2: ['monster_stage2_skull', 'monster_stage2_slime', 'monster_stage2_spider'],
+      3: ['monster_stage3_scorpion', 'monster_stage3_skull', 'monster_stage3_slime'],
+      4: ['monster_stage4_skull', 'monster_stage4_spider', 'monster_stage4_wolf'],
+      5: ['monster_stage5_boneworm', 'monster_stage5_ooze', 'monster_stage5_wolf'],
+    };
+
+    final keys = stageKeys[stageLevel];
+    if (keys != null && keys.isNotEmpty) {
+      // 몬스터 위치 해시로 일관된 외형 선택
+      final idx = (m.pos.x.hashCode ^ m.pos.y.hashCode).abs() % keys.length;
+      final img = stageMonsterImages[keys[idx]];
+      if (img != null) return img;
+      // 해당 키가 없으면 첫 번째 사용 가능한 이미지 반환
+      for (final k in keys) {
+        if (stageMonsterImages.containsKey(k)) return stageMonsterImages[k];
+      }
+    }
+
+    // 스테이지 매핑 없으면 기본 일반 몬스터 (normalGoblin 등)
+    if (stageLevel == 1 && normalGoblinImage != null) return normalGoblinImage;
+    if (stageLevel == 2 && normalSkeletonImage != null) return normalSkeletonImage;
+    if (stageLevel == 3 && normalSlimeImage != null) return normalSlimeImage;
+    if (stageLevel == 4 && normalPoisonSkullImage != null) return normalPoisonSkullImage;
+    if (stageLevel >= 5 && normalGreenGoblinImage != null) return normalGreenGoblinImage;
+
+    // 최종 폴백: 어떤 일반 이미지든 사용
+    return normalGoblinImage ?? normalSkeletonImage ?? normalSlimeImage;
+  }
+
+  // 보스 이미지 선택 (스테이지별)
+  Image? _getBossImage() {
+    if (stageLevel <= 3 && bossCerberusImage != null) return bossCerberusImage;
+    if (bossPoisonWarriorImage != null) return bossPoisonWarriorImage;
+    return bossCerberusImage;
+  }
+
+  // 미니보스 이미지 선택 (속성/스테이지별)
+  Image? _getMinibossImage(_Monster m) {
+    // 속성별 미니보스 우선
+    if (m.element != ElementType.none) {
+      final elemKey = m.element.name; // fire, water, earth, dark
+      final elemImg = minibossElementImages[elemKey];
+      if (elemImg != null) return elemImg;
+    }
+    // 스테이지별 미니보스
+    if (stageLevel <= 2 && minibossGoblinWarriorImage != null) return minibossGoblinWarriorImage;
+    if (stageLevel <= 4 && minibossSkullWarriorImage != null) return minibossSkullWarriorImage;
+    if (minibossSlimeKingImage != null) return minibossSlimeKingImage;
+    return minibossGoblinWarriorImage ?? minibossSkullWarriorImage;
+  }
+
+  // ClassType → 이미지 파일명 매핑
+  Image? _getCharacterImage(_CharacterUnit unit) {
+    // 메인 캐릭터 (슬롯 0)
+    if (!unit.isTower) {
+      final mainImg = characterImages['main_character'];
+      if (mainImg != null) return mainImg;
+    }
+    // ClassType에 대응하는 이미지 키 매핑
+    final classToImageKey = <ClassType, String>{
+      ClassType.warrior: 'warrior',
+      ClassType.crusader: 'guardian',    // crusader → guardian.png
+      ClassType.druid: 'druid',
+      ClassType.vampire: 'berserker',    // vampire → berserker.png
+      ClassType.archer: 'archer',
+      ClassType.gunslinger: 'gunslinger',
+      ClassType.trickster: 'rogue',      // trickster → rogue.png
+      ClassType.pyromancer: 'pyromancer',
+      ClassType.cryomancer: 'cryomancer',
+      ClassType.necromancer: 'necromancer',
+      ClassType.summoner: 'summoner',
+      ClassType.priestClass: 'priest',   // priestClass → priest.png
+      ClassType.pastor: 'paladin',       // pastor → paladin.png
+      ClassType.alchemist: 'alchemist',
+      ClassType.engineer: 'engineer',
+      ClassType.assistant: 'warlock',    // assistant → warlock.png
+    };
+    final key = classToImageKey[unit.definition.classType];
+    if (key != null && characterImages.containsKey(key)) {
+      return characterImages[key];
+    }
+    return null;
   }
 
   // D-4-3: 보스/미니보스 발광 오라 렌더링
@@ -795,9 +909,24 @@ extension GameRendering on CastleDefenseGame {
       final double unitAlpha = (isMainUnit && _invincibleTimer > 0)
           ? (0.4 + 0.4 * sin(gameTime * 12)).clamp(0.15, 0.85) // 점멸: sin 파형
           : 1.0;
-      final unitPaint = Paint()
-        ..color = unitColor.withValues(alpha: unitAlpha);
-      canvas.drawCircle(center, characterUnitRadius, unitPaint);
+
+      // 캐릭터 스프라이트 렌더링 (이미지 우선, 없으면 Canvas 폴백)
+      final charImg = _getCharacterImage(unit);
+      if (charImg != null) {
+        final srcRect = Rect.fromLTWH(0, 0, charImg.width.toDouble(), charImg.height.toDouble());
+        final drawSize = characterUnitRadius * 2.5;
+        final dstRect = Rect.fromCenter(center: center, width: drawSize, height: drawSize);
+        final spritePaint = Paint();
+        if (unitAlpha < 1.0) {
+          spritePaint.color = Color.fromRGBO(255, 255, 255, unitAlpha);
+        }
+        canvas.drawImageRect(charImg, srcRect, dstRect, spritePaint);
+      } else {
+        // 폴백: 원형 드로잉
+        final unitPaint = Paint()
+          ..color = unitColor.withValues(alpha: unitAlpha);
+        canvas.drawCircle(center, characterUnitRadius, unitPaint);
+      }
 
       // 전사 검 휘두르기 효과 렌더링
       if (unit.definition.role == RoleType.tanker && unit.isSwinging) {
@@ -870,14 +999,16 @@ extension GameRendering on CastleDefenseGame {
         canvas.drawCircle(center, 60.0, rangePaint);
       }
 
-      // 역할 이모지 표시
-      _drawCenteredText(
-        canvas,
-        unit.definition.role.emoji,
-        center,
-        fontSize: 16,
-        color: const Color(0xFFFFFFFF),
-      );
+      // 역할 이모지 표시 (스프라이트가 있으면 생략)
+      if (charImg == null) {
+        _drawCenteredText(
+          canvas,
+          unit.definition.role.emoji,
+          center,
+          fontSize: 16,
+          color: const Color(0xFFFFFFFF),
+        );
+      }
 
       // HP 바 (크고 명확하게)
       const double hpBarWidth = 32.0;
