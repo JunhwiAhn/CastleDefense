@@ -1172,9 +1172,17 @@ extension CombatSystem on CastleDefenseGame {
     return 1.0;
   }
 
-  void _damageMonster(_Monster monster, int damage) {
+  void _damageMonster(_Monster monster, int damage, {double elementMult = 1.0, ElementType element = ElementType.none}) {
     monster.hp -= damage;
     monster.damageFlashTimer = 0.15; // 0.15초 동안 빨간색 점멸
+
+    // 데미지 숫자 표시 (몬스터 위에 부유)
+    _damageNumbers.add(_DamageNumber(
+      pos: Vector2(monster.pos.x + (_random.nextDouble() - 0.5) * 16, monster.pos.y - monsterRadius - 4),
+      amount: damage,
+      elementMult: elementMult,
+      element: element,
+    ));
 
     // 히트 스파크 VFX
     vfxEffects.add(_VfxEffect(
