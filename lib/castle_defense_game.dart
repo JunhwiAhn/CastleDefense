@@ -59,42 +59,42 @@ class Augment {
 // 전체 34종 증강 정의
 const List<Augment> kAllAugments = [
   // === Common (14종) ===
-  Augment(id:'C-01', nameJp:'鋼の意志', tier:AugmentTier.common, category:AugmentCategory.main, description:'메인 최대 HP +15'),
-  Augment(id:'C-02', nameJp:'迅速の加護', tier:AugmentTier.common, category:AugmentCategory.main, description:'메인 이동속도 +25%'),
-  Augment(id:'C-03', nameJp:'鋭利な刃', tier:AugmentTier.common, category:AugmentCategory.main, description:'메인 공격력 +20%'),
-  Augment(id:'C-04', nameJp:'連射の才', tier:AugmentTier.common, category:AugmentCategory.main, description:'메인 공격속도 +20%'),
-  Augment(id:'C-05', nameJp:'城壁修復', tier:AugmentTier.common, category:AugmentCategory.castle, description:'성 최대 HP +25 및 즉시 25 회복'),
-  Augment(id:'C-06', nameJp:'タワー油断', tier:AugmentTier.common, category:AugmentCategory.tower, description:'전 타워 공격속도 +20%'),
-  Augment(id:'C-07', nameJp:'巨大磁石', tier:AugmentTier.common, category:AugmentCategory.utility, description:'XP 회수 반경 +30px'),
-  Augment(id:'C-08', nameJp:'速成復活', tier:AugmentTier.common, category:AugmentCategory.utility, description:'복활 카운트다운 -2초'),
-  Augment(id:'C-09', nameJp:'金の手', tier:AugmentTier.common, category:AugmentCategory.economy, description:'골드 획득량 +30%'),
-  Augment(id:'C-10', nameJp:'余波', tier:AugmentTier.common, category:AugmentCategory.main, description:'메인 격파 시 주위 30px 스플래시'),
-  Augment(id:'C-11', nameJp:'守護の炎', tier:AugmentTier.common, category:AugmentCategory.castle, description:'라운드 시작 시 성 HP +5 회복'),
-  Augment(id:'C-12', nameJp:'タワー補給', tier:AugmentTier.common, category:AugmentCategory.tower, description:'전 타워 사거리 +20%'),
-  Augment(id:'C-13', nameJp:'疾風迅雷', tier:AugmentTier.common, category:AugmentCategory.utility, description:'복활 무적시간 +2초'),
-  Augment(id:'C-14', nameJp:'属性目覚め', tier:AugmentTier.common, category:AugmentCategory.elemental, description:'속성 데미지 보너스 +10%'),
+  Augment(id:'C-01', nameJp:'鋼の意志', tier:AugmentTier.common, category:AugmentCategory.main, description:'メイン最大HP +15'),
+  Augment(id:'C-02', nameJp:'迅速の加護', tier:AugmentTier.common, category:AugmentCategory.main, description:'メイン移動速度 +25%'),
+  Augment(id:'C-03', nameJp:'鋭利な刃', tier:AugmentTier.common, category:AugmentCategory.main, description:'メイン攻撃力 +20%'),
+  Augment(id:'C-04', nameJp:'連射の才', tier:AugmentTier.common, category:AugmentCategory.main, description:'メイン攻撃速度 +20%'),
+  Augment(id:'C-05', nameJp:'城壁修復', tier:AugmentTier.common, category:AugmentCategory.castle, description:'城最大HP +25 & 即時25回復'),
+  Augment(id:'C-06', nameJp:'タワー油断', tier:AugmentTier.common, category:AugmentCategory.tower, description:'全タワー攻撃速度 +20%'),
+  Augment(id:'C-07', nameJp:'巨大磁石', tier:AugmentTier.common, category:AugmentCategory.utility, description:'XP回収半径 +30px'),
+  Augment(id:'C-08', nameJp:'速成復活', tier:AugmentTier.common, category:AugmentCategory.utility, description:'復活カウントダウン -2秒'),
+  Augment(id:'C-09', nameJp:'金の手', tier:AugmentTier.common, category:AugmentCategory.economy, description:'ゴールド獲得量 +30%'),
+  Augment(id:'C-10', nameJp:'余波', tier:AugmentTier.common, category:AugmentCategory.main, description:'メイン撃破時 周囲30pxスプラッシュ'),
+  Augment(id:'C-11', nameJp:'守護の炎', tier:AugmentTier.common, category:AugmentCategory.castle, description:'ラウンド開始時 城HP +5回復'),
+  Augment(id:'C-12', nameJp:'タワー補給', tier:AugmentTier.common, category:AugmentCategory.tower, description:'全タワー射程 +20%'),
+  Augment(id:'C-13', nameJp:'疾風迅雷', tier:AugmentTier.common, category:AugmentCategory.utility, description:'復活無敵時間 +2秒'),
+  Augment(id:'C-14', nameJp:'属性目覚め', tier:AugmentTier.common, category:AugmentCategory.elemental, description:'属性ダメージボーナス +10%'),
   // === Rare (12종) ===
-  Augment(id:'R-01', nameJp:'連鎖弾', tier:AugmentTier.rare, category:AugmentCategory.main, description:'투사물 착탄 후 최근 적에게 60% 연쇄'),
-  Augment(id:'R-02', nameJp:'吸血衝動', tier:AugmentTier.rare, category:AugmentCategory.main, description:'공격 데미지의 20%를 HP로 흡수'),
-  Augment(id:'R-03', nameJp:'爆発弾頭', tier:AugmentTier.rare, category:AugmentCategory.tower, description:'투사물 착탄 시 35px 범위 50% 스플래시'),
-  Augment(id:'R-04', nameJp:'城の怒り', tier:AugmentTier.rare, category:AugmentCategory.castle, description:'성 피격 시 타워 공격력 +15% (5초, 최대3스택)'),
-  Augment(id:'R-05', nameJp:'超集中砲火', tier:AugmentTier.rare, category:AugmentCategory.tower, description:'타워 집중 공격 시 데미지 +30%'),
-  Augment(id:'R-06', nameJp:'緊急発動', tier:AugmentTier.rare, category:AugmentCategory.special, description:'스킬 게이지 축적량 +50%'),
-  Augment(id:'R-07', nameJp:'元素爆発', tier:AugmentTier.rare, category:AugmentCategory.elemental, description:'통상 공격에 속성 상태이상 15% 발동'),
-  Augment(id:'R-08', nameJp:'鉄壁の城', tier:AugmentTier.rare, category:AugmentCategory.castle, description:'성 접촉 데미지 -30%'),
-  Augment(id:'R-09', nameJp:'宝の山', tier:AugmentTier.rare, category:AugmentCategory.utility, description:'XP젬/골드 소멸시간 +15초'),
-  Augment(id:'R-10', nameJp:'二段蓄積', tier:AugmentTier.rare, category:AugmentCategory.utility, description:'레벨업 XP 자석 2연속 발동'),
-  Augment(id:'R-11', nameJp:'タワー連携', tier:AugmentTier.rare, category:AugmentCategory.tower, description:'동일 타겟 2연속 공격 후 3회째 자동 크리티컬'),
-  Augment(id:'R-12', nameJp:'不屈の城', tier:AugmentTier.rare, category:AugmentCategory.castle, description:'성 HP 50이하 시 1회 10초 바리어 발동'),
+  Augment(id:'R-01', nameJp:'連鎖弾', tier:AugmentTier.rare, category:AugmentCategory.main, description:'投射物着弾後 最寄りの敵に60%連鎖'),
+  Augment(id:'R-02', nameJp:'吸血衝動', tier:AugmentTier.rare, category:AugmentCategory.main, description:'攻撃ダメージの20%をHPに吸収'),
+  Augment(id:'R-03', nameJp:'爆発弾頭', tier:AugmentTier.rare, category:AugmentCategory.tower, description:'投射物着弾時 35px範囲50%スプラッシュ'),
+  Augment(id:'R-04', nameJp:'城の怒り', tier:AugmentTier.rare, category:AugmentCategory.castle, description:'城被弾時 タワー攻撃力+15% (5秒,最大3重)'),
+  Augment(id:'R-05', nameJp:'超集中砲火', tier:AugmentTier.rare, category:AugmentCategory.tower, description:'タワー集中攻撃時 ダメージ+30%'),
+  Augment(id:'R-06', nameJp:'緊急発動', tier:AugmentTier.rare, category:AugmentCategory.special, description:'スキルゲージ蓄積量 +50%'),
+  Augment(id:'R-07', nameJp:'元素爆発', tier:AugmentTier.rare, category:AugmentCategory.elemental, description:'通常攻撃に属性状態異常15%発動'),
+  Augment(id:'R-08', nameJp:'鉄壁の城', tier:AugmentTier.rare, category:AugmentCategory.castle, description:'城接触ダメージ -30%'),
+  Augment(id:'R-09', nameJp:'宝の山', tier:AugmentTier.rare, category:AugmentCategory.utility, description:'XPジェム/ゴールド消滅時間 +15秒'),
+  Augment(id:'R-10', nameJp:'二段蓄積', tier:AugmentTier.rare, category:AugmentCategory.utility, description:'レベルアップ時 XP磁石2連続発動'),
+  Augment(id:'R-11', nameJp:'タワー連携', tier:AugmentTier.rare, category:AugmentCategory.tower, description:'同一ターゲット2連続攻撃後 3回目自動クリティカル'),
+  Augment(id:'R-12', nameJp:'不屈の城', tier:AugmentTier.rare, category:AugmentCategory.castle, description:'城HP50以下時 1回10秒バリア発動'),
   // === Legendary (8종) ===
-  Augment(id:'L-01', nameJp:'不死の誓い', tier:AugmentTier.legendary, category:AugmentCategory.main, description:'HP0 시 1회 HP1 생존 + 3초 무적 (스테이지 1회)', carryOverToNextStage:true),
-  Augment(id:'L-02', nameJp:'王の咆哮', tier:AugmentTier.legendary, category:AugmentCategory.special, description:'필살기 발동 시 10초간 타워 공격력+60% 공속+40%', carryOverToNextStage:true),
-  Augment(id:'L-03', nameJp:'大地の守護者', tier:AugmentTier.legendary, category:AugmentCategory.castle, description:'성 HP 30%이하 시 60초 바리어 (성 데미지 50%감소) 1회'),
-  Augment(id:'L-04', nameJp:'時の加速', tier:AugmentTier.legendary, category:AugmentCategory.utility, description:'라운드 인터벌 중 이동속도 400% + XP 자석 상시 발동'),
-  Augment(id:'L-05', nameJp:'元素の嵐', tier:AugmentTier.legendary, category:AugmentCategory.elemental, description:'3속성 이상 시 전 공격에 랜덤 속성 상태이상 30%'),
-  Augment(id:'L-06', nameJp:'究極砲台', tier:AugmentTier.legendary, category:AugmentCategory.tower, description:'타워 투사물 수 +1 (타워 1기씩 순서대로 적용)', carryOverToNextStage:true),
-  Augment(id:'L-07', nameJp:'魂の連鎖', tier:AugmentTier.legendary, category:AugmentCategory.synergy, description:'메인이 적 격파 시 전 타워 다음 공격이 크리티컬'),
-  Augment(id:'L-08', nameJp:'永遠の契約', tier:AugmentTier.legendary, category:AugmentCategory.synergy, description:'같은 효과 바프 2회 이상 취득 시 +1스택 추가'),
+  Augment(id:'L-01', nameJp:'不死の誓い', tier:AugmentTier.legendary, category:AugmentCategory.main, description:'HP0時 1回HP1生存+3秒無敵(ステージ1回)', carryOverToNextStage:true),
+  Augment(id:'L-02', nameJp:'王の咆哮', tier:AugmentTier.legendary, category:AugmentCategory.special, description:'必殺技発動時 10秒間タワー攻撃力+60% 攻速+40%', carryOverToNextStage:true),
+  Augment(id:'L-03', nameJp:'大地の守護者', tier:AugmentTier.legendary, category:AugmentCategory.castle, description:'城HP30%以下時 60秒バリア(城ダメージ50%減)1回'),
+  Augment(id:'L-04', nameJp:'時の加速', tier:AugmentTier.legendary, category:AugmentCategory.utility, description:'ラウンドインターバル中 移動速度400%+XP磁石常時発動'),
+  Augment(id:'L-05', nameJp:'元素の嵐', tier:AugmentTier.legendary, category:AugmentCategory.elemental, description:'3属性以上時 全攻撃にランダム属性状態異常30%'),
+  Augment(id:'L-06', nameJp:'究極砲台', tier:AugmentTier.legendary, category:AugmentCategory.tower, description:'タワー投射物数+1(タワー1基ずつ順次適用)', carryOverToNextStage:true),
+  Augment(id:'L-07', nameJp:'魂の連鎖', tier:AugmentTier.legendary, category:AugmentCategory.synergy, description:'メイン敵撃破時 全タワー次攻撃がクリティカル'),
+  Augment(id:'L-08', nameJp:'永遠の契約', tier:AugmentTier.legendary, category:AugmentCategory.synergy, description:'同効果バフ2回以上取得時 +1スタック追加'),
 ];
 
 // 리디자인 B-2-11: 바프 타입 (P-2-1 기준 8종)
@@ -319,7 +319,6 @@ class _Monster {
     required this.maxHp,
     required this.walking,
     this.type = MonsterType.normal,
-    this.element = ElementType.none,
   }) : displayHp = hp.toDouble();
 }
 
@@ -418,9 +417,9 @@ class _CharacterUnit {
   Vector2 pos;
   double currentHp;
   double maxHp;
-  double attackCooldown; // 공격 쿨타임
+  double attackCooldown = 0.0; // 공격 쿨타임
   _Monster? targetMonster; // 현재 타겟 몬스터
-  bool movingTowardsTarget; // 타겟을 향해 이동 중인지
+  bool movingTowardsTarget = false; // 타겟을 향해 이동 중인지
   bool hasAttackSpeedBuff = false; // 공격속도 버프 보유 여부
   bool hasMoveSpeedBuff = false; // 이동속도 버프 보유 여부
 
@@ -444,9 +443,6 @@ class _CharacterUnit {
     required this.pos,
     required this.currentHp,
     required this.maxHp,
-    this.attackCooldown = 0.0,
-    this.targetMonster,
-    this.movingTowardsTarget = false,
     this.isTower = false,
     this.towerFixedPos,
   });
@@ -464,6 +460,7 @@ class _CharacterSlot {
   bool hasCharacter; // 캐릭터가 배치되어 있는지
   String characterName; // 캐릭터 이름 (프로토타입용)
   bool skillReady; // 스킬 사용 가능 여부
+  double skillCooldownRemaining = 0.0; // 스킬 쿨다운 남은 시간 (초)
 
   _CharacterSlot({
     required this.slotIndex,
@@ -549,7 +546,6 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   Vector2 _stickBasePos = Vector2.zero();
   Vector2 _stickKnobPos = Vector2.zero();
   static const double _stickOuterRadius = 60.0;
-  static const double _stickKnobRadius = 25.0;
   static const double _stickDeadzone = 7.0; // Planner 추천: 외경 12%
 
   // 리디자인 B-2-5: 메인 캐릭터 이동 속도
@@ -570,9 +566,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   // 리디자인 B-2-7: 복활 시스템
   bool _mainCharRespawning = false; // 복활 카운트다운 중
   double _respawnTimer = 0.0; // 복활 카운트다운 타이머
-  static const double _respawnDuration = 5.0; // 5초 카운트다운
   double _invincibleTimer = 0.0; // 복활 후 무적 타이머
-  static const double _invincibleDuration = 2.0; // 2초 무적
 
   // 플레이어 정보 (네비게이션 바용)
   String playerNickname = 'Player';
@@ -581,7 +575,6 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   // 리디자인 B-2-10: 인게임 캐릭터 XP / 레벨
   int playerXp = 0;
   int playerCharLevel = 1;
-  bool _pendingLevelUp = false; // 레벨업 대기 (버프 카드 표시 트리거)
   // 리디자인 B-2-11: 바프 스택 카운터 (P-2-1 기준)
   int _atkUpCount = 0;       // 공격력 UP 스택 (최대 5)
   int _spdUpCount = 0;       // 공격속도 UP 스택 (최대 5)
@@ -610,7 +603,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   bool _augmentR12Used = false;   // R-12 불굴의 성: 1회 발동 여부
   int _augmentR04Stacks = 0;      // R-04 성의 분노: 현재 스택 수
   double _augmentR04Timer = 0.0;  // R-04 타이머
-  bool _augmentL07NextCrit = false; // L-07 영혼의 연쇄: 다음 타워 공격 크리티컬 여부
+  // TODO: L-07 영혼의 연쇄 - 타워 공격 크리티컬 판정 로직 구현 필요
   bool _augmentL02Active = false;        // L-02 왕의 포효: 타워 강화 활성 여부
   double _augmentL02Timer = 0.0;         // L-02 타이머 (10초)
   bool _augmentL03BarrierActive = false; // L-03 대지의 수호자: 바리어 활성 여부
@@ -829,7 +822,6 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     // 리디자인 B-2-10: 인게임 XP 초기화
     playerXp = 0;
     playerCharLevel = 1;
-    _pendingLevelUp = false;
     // 속성 시스템: 스테이지 시작 시 속성 리셋 (바프로 재부여)
     _mainCharElement = ElementType.none;
     _elementMasteryCount = 0;
@@ -843,7 +835,6 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     _augmentR12Used = false;
     _augmentR04Stacks = 0;
     _augmentR04Timer = 0.0;
-    _augmentL07NextCrit = false;
     _augmentL02Active = false;
     _augmentL02Timer = 0.0;
     _augmentL03BarrierActive = false;
@@ -1028,6 +1019,16 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     if (_augmentL03BarrierActive) {
       _augmentL03BarrierTimer -= dt;
       if (_augmentL03BarrierTimer <= 0) _augmentL03BarrierActive = false;
+    }
+    // 캐릭터 슬롯 스킬 쿨다운 업데이트
+    for (final slot in characterSlots) {
+      if (slot.skillCooldownRemaining > 0) {
+        slot.skillCooldownRemaining -= dt;
+        if (slot.skillCooldownRemaining <= 0) {
+          slot.skillCooldownRemaining = 0;
+          slot.skillReady = true;
+        }
+      }
     }
 
     // 현재 라운드의 몬스터 스폰
@@ -1393,8 +1394,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     final double gaugeIncrease = baseGauge * _augmentSkillGaugeMultiplier;
     skillGauge = min(100.0, skillGauge + gaugeIncrease);
     if (skillGauge >= 100.0) skillReady = true;
-    // L-07: 영혼의 연쇄 - 격파 시 다음 타워 공격 크리티컬 예약
-    if (_hasAugment('L-07')) _augmentL07NextCrit = true;
+    // TODO: L-07 영혼의 연쇄 - 격파 시 크리티컬 예약 (타워 공격 판정에서 사용)
     // C-10: 여파 - 격파 시 주위 30px 스플래시 데미지
     if (_hasAugment('C-10')) {
       const double splashRadius = 30.0;
@@ -1415,7 +1415,6 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     if (playerXp >= _xpToNextLevel()) {
       playerXp -= _xpToNextLevel();
       playerCharLevel++;
-      _pendingLevelUp = true;
       // 리디자인 B-2-11: 레벨업 바프 카드 선택 화면으로 전환
       _generateBuffOptions();
       // R-10: 이단 축적 - 레벨업 시 XP 자석 2연속 발동 (2초)
@@ -1573,13 +1572,11 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     }
     _lastChosenBuff = buff;
     _buffOptions = [];
-    _pendingLevelUp = false;
     gameState = GameState.playing;
   }
 
   // 리디자인 B-2-11: 바프 적용 후 캐릭터 스탯 가져오기 (공격력 보정)
   double get _buffedMainAtkMultiplier => pow(1.15, _atkUpCount).toDouble();
-  double get _buffedMainAtkIntervalMultiplier => pow(0.90, _spdUpCount).toDouble();
   // L-04: 라운드 인터벌 중 이동속도 400%
   double get _buffedMoveSpeed {
     double speed = _mainCharSpeed * pow(1.20, _moveUpCount).toDouble();
@@ -1594,8 +1591,6 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       (_augmentL02Active ? 1.6 : 1.0); // L-02: 필살기 후 10초 타워 공격력 +60%
   // 리디자인 B-2-12: XP 자석 반경 (기본 20px + 스택당 +15px)
   double get _xpCollectRadius => 20.0 + 15.0 * _magnetCount;
-  // 속성 시스템: 속성 마스터리 배율 (기본 x1.0, 스택당 +10%)
-  double get _elementMasteryMultiplier => 1.0 + 0.1 * _elementMasteryCount;
   // C-08: 복활 대기시간 (기본 5초 → 3초), C-13: 복활 무적시간 (기본 2초 → 4초)
   double get _effectiveRespawnDuration => _hasAugment('C-08') ? 3.0 : 5.0;
   double get _effectiveInvincibleDuration => _hasAugment('C-13') ? 4.0 : 2.0;
@@ -2214,22 +2209,6 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     // 闇속성을 공격받는 경우 x1.1
     if (defender == ElementType.dark) return 1.1;
     return 1.0;
-  }
-
-  // 속성 데미지 적용 (_damageMonsterWithElement 사용 권장)
-  void _damageMonsterWithElement(_Monster monster, int baseDamage, ElementType attackerElement) {
-    final double elementMult = getElementMultiplier(attackerElement, monster.element);
-    // 저주 상태이상: 피격 데미지 20% 증가
-    final double curseMult = monster.curseTimer > 0 ? 1.2 : 1.0;
-    final int finalDamage = (baseDamage * elementMult * curseMult).round();
-    _damageMonster(monster, finalDamage);
-    // #34 속성UI: 부유 데미지 숫자 생성
-    _damageNumbers.add(_DamageNumber(
-      pos: Vector2(monster.pos.x, monster.pos.y - 20),
-      amount: finalDamage,
-      elementMult: elementMult,
-      element: attackerElement,
-    ));
   }
 
   void _damageMonster(_Monster monster, int damage) {
@@ -3273,7 +3252,6 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
     // 스킬 효과: 모든 몬스터에게 3 데미지
     const int skillDamage = 3;
-    int damageCount = 0;
 
     for (var i = monsters.length - 1; i >= 0; i--) {
       final m = monsters[i];
@@ -3281,21 +3259,11 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       if (m.hp <= 0) {
         _killMonsterAtIndex(i);
       }
-      damageCount++;
     }
 
-    // 스킬 사용 후 쿨다운 (프로토타입: 즉시 재사용 불가)
+    // 스킬 사용 후 쿨다운 세팅 (update 루프에서 dt 기반 감소)
     slot.skillReady = false;
-
-    // 5초 후 스킬 재사용 가능 (실제로는 타이머 필요, 지금은 간단히 표시만)
-    // TODO: 실제 쿨다운 타이머 구현
-    Future.delayed(const Duration(seconds: 5), () {
-      if (slotIndex < characterSlots.length) {
-        characterSlots[slotIndex].skillReady = true;
-      }
-    });
-
-    print('캐릭터 ${slotIndex + 1} 스킬 사용! $damageCount 마리의 몬스터에게 데미지');
+    slot.skillCooldownRemaining = 5.0;
   }
 
   // 일시정지 화면: "재개 / 라운드 선택 / 재시작"
@@ -3319,18 +3287,27 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   }
 
   void _handleTapInShop(Vector2 tapPos) {
-    // 화면 하단 20% 탭 = 상점 나가기 (계속 버튼 임시 위치)
+    // 계속 버튼 (y > 0.80) 탭 = 상점 나가기
     if (tapPos.y > size.y * 0.8) {
       _leaveShop();
+      return;
     }
-    // 상점 아이템 탭 영역 (Designer D-2-2에서 정확한 위치 구현)
-    // 임시 구현: 화면 Y 위치에 따라 아이템 선택
-    else if (tapPos.y > size.y * 0.3 && tapPos.y < size.y * 0.5) {
-      _buyShopItem(ShopItemType.castleMaxHpUp);
-    } else if (tapPos.y > size.y * 0.5 && tapPos.y < size.y * 0.65) {
-      _buyShopItem(ShopItemType.towerPowerUp);
-    } else if (tapPos.y > size.y * 0.65 && tapPos.y < size.y * 0.8) {
-      _buyShopItem(ShopItemType.mainCharHpUp);
+    // 상점 아이템 탭 영역 (_renderShopOverlay 카드 위치와 동기화)
+    // centerYs = [0.40, 0.575, 0.725], cardH = 70
+    const double cardH = 70.0;
+    final List<double> centerYs = [size.y * 0.40, size.y * 0.575, size.y * 0.725];
+    const List<ShopItemType> items = [
+      ShopItemType.castleMaxHpUp,
+      ShopItemType.towerPowerUp,
+      ShopItemType.mainCharHpUp,
+    ];
+    for (int i = 0; i < 3; i++) {
+      if (tapPos.y >= centerYs[i] - cardH / 2 &&
+          tapPos.y < centerYs[i] + cardH / 2 &&
+          tapPos.x >= 20 && tapPos.x <= size.x - 20) {
+        _buyShopItem(items[i]);
+        return;
+      }
     }
   }
 
@@ -3589,11 +3566,6 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   // 하단 메뉴 버튼 Rect
   // -----------------------------
   static const double _bottomMenuHeight = 70.0;
-  static const double _bottomMenuIconSize = 30.0;
-
-  Rect _bottomMenuRect() {
-    return Rect.fromLTWH(0, size.y - _bottomMenuHeight, size.x, _bottomMenuHeight);
-  }
 
   Rect _bottomMenuButtonRect(int index) {
     const int totalButtons = 5;
@@ -3636,8 +3608,10 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     _renderXpMagnetEffect(canvas);  // D-3-4: XP 마그넷 연출
     _renderGoldDrops(canvas);       // D-3-3: 골드 코인
     _renderDamageNumbers(canvas);   // #34: 속성 데미지 숫자
-    _renderStageProgress(canvas);
-    _renderWeaponInfo(canvas);
+    // D-01: _renderStageProgress 제거 — HUD Row2와 정보 중복 (P-04)
+    // _renderStageProgress(canvas);
+    // D-02: _renderWeaponInfo 제거 — 디버그 정보, 스틱/스킬 영역과 겹침 (P-06)
+    // _renderWeaponInfo(canvas);
     _renderHUD(canvas); // D-1-1: 상단 HUD
 
     // 플레이/라운드 클리어 중 하단 UI (스틱, 스킬, 골드) 표시
@@ -3867,12 +3841,12 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       case BuffType.towerPowerUp: return 'Tower ATK +10%\n(max 5)';
       case BuffType.xpMagnetUp: return 'XP Radius +15px\n(max 3)';
       case BuffType.castleBarrier: return '10s Barrier';
-      case BuffType.elementFireGrant: return '화염 속성 부여\n(상덮어쓰기)';
-      case BuffType.elementWaterGrant: return '수빙 속성 부여\n(상덮어쓰기)';
-      case BuffType.elementEarthGrant: return '대지 속성 부여\n(상덮어쓰기)';
-      case BuffType.elementElectricGrant: return '번개 속성 부여\n(상덮어쓰기)';
-      case BuffType.elementDarkGrant: return '암흑 속성 부여\n(상덮어쓰기)';
-      case BuffType.elementMastery: return '속성 보너스\n+10% (max 3)';
+      case BuffType.elementFireGrant: return '火炎属性付与\n(上書き)';
+      case BuffType.elementWaterGrant: return '水氷属性付与\n(上書き)';
+      case BuffType.elementEarthGrant: return '大地属性付与\n(上書き)';
+      case BuffType.elementElectricGrant: return '雷属性付与\n(上書き)';
+      case BuffType.elementDarkGrant: return '暗黒属性付与\n(上書き)';
+      case BuffType.elementMastery: return '属性ボーナス\n+10% (max 3)';
     }
   }
 
@@ -4047,151 +4021,6 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
     // 성 HP 바 렌더링 (D-1-2)
     _renderCastleHP(canvas);
-  }
-
-  // 캐릭터 슬롯 렌더링
-  void _renderCharacterSlots(Canvas canvas) {
-    for (int i = 0; i < characterSlots.length; i++) {
-      final slot = characterSlots[i];
-      final rect = _characterSlotRect(i);
-
-      if (slot.hasCharacter && i < partySlots.length && partySlots[i] != null) {
-        // 파티에서 캐릭터 정보 가져오기
-        final instanceId = partySlots[i]!;
-        final character = ownedCharacters.firstWhere(
-          (c) => c.instanceId == instanceId,
-          orElse: () => ownedCharacters.isNotEmpty
-              ? ownedCharacters.first
-              : OwnedCharacter(instanceId: '', characterId: ''),
-        );
-
-        if (character.characterId.isNotEmpty) {
-          final definition = CharacterDefinitions.byId(character.characterId);
-
-          // 랭크 색상 배경 (30% 투명도)
-          final bgColor = Color(definition.rank.color).withOpacity(0.3);
-          final bgPaint = Paint()..color = bgColor;
-
-          // 테두리 색상 (스킬 준비 상태에 따라)
-          final borderColor = slot.skillReady
-              ? const Color(0xFF00E676) // 스킬 준비: 초록색
-              : Color(definition.rank.color); // 기본: 랭크 색상
-          final borderPaint = Paint()
-            ..color = borderColor
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 2.0;
-
-          final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(4));
-          canvas.drawRRect(rrect, bgPaint);
-          canvas.drawRRect(rrect, borderPaint);
-
-          // 역할 이모지 중앙에 크게 표시
-          _drawCenteredText(
-            canvas,
-            definition.role.emoji,
-            Offset(rect.center.dx, rect.center.dy - 2),
-            fontSize: 28,
-            color: const Color(0xFFFFFFFF),
-          );
-
-          // 랭크 배지 (좌측 상단)
-          final rankBadgeRect = Rect.fromLTWH(rect.left + 2, rect.top + 2, 16, 12);
-          final rankBadgePaint = Paint()..color = Color(definition.rank.color);
-          canvas.drawRRect(
-            RRect.fromRectAndRadius(rankBadgeRect, const Radius.circular(2)),
-            rankBadgePaint,
-          );
-          _drawCenteredText(
-            canvas,
-            definition.rank.displayName,
-            Offset(rankBadgeRect.center.dx, rankBadgeRect.center.dy),
-            fontSize: 8,
-            color: const Color(0xFFFFFFFF),
-          );
-
-          // 레벨 배지 (우측 하단)
-          final levelText = 'Lv.${character.level}';
-          final levelBadgeWidth = levelText.length * 5.0 + 4;
-          final levelBadgeRect = Rect.fromLTWH(
-            rect.right - levelBadgeWidth - 2,
-            rect.bottom - 14,
-            levelBadgeWidth,
-            12,
-          );
-          final levelBadgePaint = Paint()..color = const Color(0xCC000000);
-          canvas.drawRRect(
-            RRect.fromRectAndRadius(levelBadgeRect, const Radius.circular(2)),
-            levelBadgePaint,
-          );
-          _drawCenteredText(
-            canvas,
-            levelText,
-            Offset(levelBadgeRect.center.dx, levelBadgeRect.center.dy),
-            fontSize: 8,
-            color: const Color(0xFFFFFFFF),
-          );
-
-          // 스킬 준비 표시 (준비되면 테두리가 초록색으로 변경됨)
-          if (slot.skillReady) {
-            _drawCenteredText(
-              canvas,
-              '✨',
-              Offset(rect.left + 10, rect.top + 10),
-              fontSize: 12,
-              color: const Color(0xFF00E676),
-            );
-          }
-        }
-      } else if (slot.hasCharacter) {
-        // 파티 슬롯에 없지만 hasCharacter가 true인 경우 (기본 표시)
-        final bgPaint = Paint()..color = const Color(0xFF37474F);
-        final borderPaint = Paint()
-          ..color = slot.skillReady
-              ? const Color(0xFF00E676)
-              : const Color(0xFF90A4AE)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.0;
-
-        canvas.drawRect(rect, bgPaint);
-        canvas.drawRect(rect, borderPaint);
-
-        _drawCenteredText(
-          canvas,
-          '🛡️',
-          Offset(rect.center.dx, rect.center.dy - 8),
-          fontSize: 24,
-          color: const Color(0xFFFFFFFF),
-        );
-
-        if (slot.skillReady) {
-          _drawCenteredText(
-            canvas,
-            '✨',
-            Offset(rect.center.dx, rect.bottom - 12),
-            fontSize: 12,
-            color: const Color(0xFF00E676),
-          );
-        }
-      } else {
-        // 캐릭터 없음: 자물쇠 아이콘 (잠금 상태)
-        final bgPaint = Paint()..color = const Color(0xFF212121);
-        final borderPaint = Paint()
-          ..color = const Color(0xFF424242)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.0;
-
-        canvas.drawRect(rect, bgPaint);
-        canvas.drawRect(rect, borderPaint);
-
-        _drawCenteredText(
-          canvas,
-          '🔒',
-          Offset(rect.center.dx, rect.center.dy),
-          fontSize: 20,
-          color: const Color(0xFF616161),
-        );
-      }
-    }
   }
 
   void _renderMonsters(Canvas canvas) {
@@ -5082,7 +4911,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
     _drawText(
       canvas,
-      '기본검 (DMG: $weaponDamage)',
+      '基本剣 (DMG: $weaponDamage)',
       textOffset,
       fontSize: 12,
       alignCenter: false,
@@ -5173,12 +5002,12 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
         Offset(size.x / 2, size.y * 0.06),
         fontSize: 22,
         color: Color.fromRGBO(255, (215 * tp).toInt(), 0, 1.0));
-    _drawCenteredText(canvas, 'Round \$currentRound — 1개를 선택하세요',
+    _drawCenteredText(canvas, 'Round \$currentRound — 1つを選択してください',
         Offset(size.x / 2, size.y * 0.13),
         fontSize: 11, color: const Color(0xFF888888));
 
     if (_augmentOptions.isEmpty) {
-      _drawCenteredText(canvas, '증강 없음', Offset(size.x / 2, size.y / 2),
+      _drawCenteredText(canvas, '増強なし', Offset(size.x / 2, size.y / 2),
           fontSize: 16, color: const Color(0xFF555555));
       return;
     }
@@ -5241,7 +5070,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     }
 
     // 하단 안내 점멸
-    _drawCenteredText(canvas, '카드를 탭해서 선택',
+    _drawCenteredText(canvas, 'カードをタップして選択',
         Offset(size.x / 2, size.y * 0.84),
         fontSize: 12,
         color: Color.fromRGBO(200, 200, 200, 0.6 + 0.4 * sin(gameTime * 2)));
@@ -5263,7 +5092,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
   // D-2-2: 스테이지 클리어 후 상점 UI (Violet Theme)
   // 탭 영역은 _handleTapInShop 과 동기화:
-  //   castleMaxHpUp: y in [0.30, 0.50), towerPowerUp: y in [0.50, 0.65), mainCharHpUp: y in [0.65, 0.80)
+  //   centerYs = [0.40, 0.575, 0.725], cardH = 70 → 각 카드 Rect 기준 판정
   //   계속 버튼: y > 0.80
   void _renderShopOverlay(Canvas canvas) {
     // 배경 오버레이
@@ -5427,7 +5256,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   void _renderLoadingOverlay(Canvas canvas) {
     _drawCenteredText(
       canvas,
-      '준비 중...',
+      '準備中...',
       Offset(size.x / 2, size.y * 0.4),
       fontSize: 20,
       color: const Color(0xFFFFFFFF),
@@ -6058,7 +5887,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     // 헤더
     _drawCenteredText(
       canvas,
-      '캐릭터 선택',
+      'キャラクター選択',
       Offset(popupRect.center.dx, popupY + 25),
       fontSize: 18,
       color: const Color(0xFFFFFFFF),
@@ -6080,7 +5909,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     if (ownedCharacters.isEmpty) {
       _drawCenteredText(
         canvas,
-        '보유한 캐릭터가 없습니다',
+        '所持キャラクターがいません',
         Offset(popupRect.center.dx, popupRect.center.dy),
         fontSize: 16,
         color: const Color(0xFF999999),
@@ -6262,7 +6091,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
       _drawCenteredText(
         canvas,
-        '파티에서 제거',
+        'パーティから外す',
         removeButtonRect.center,
         fontSize: 14,
         color: const Color(0xFFFFFFFF),
@@ -6413,7 +6242,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   void _renderShopContent(Canvas canvas) {
     _drawCenteredText(
       canvas,
-      '🏪 상점',
+      '🏪 ショップ',
       Offset(size.x / 2, size.y * 0.4),
       fontSize: 32,
       color: const Color(0xFF000000),
@@ -6421,7 +6250,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
     _drawCenteredText(
       canvas,
-      '준비 중...',
+      '準備中...',
       Offset(size.x / 2, size.y * 0.5),
       fontSize: 18,
       color: const Color(0xFF666666),
@@ -6440,7 +6269,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
     _drawCenteredText(
       canvas,
-      '준비 중...',
+      '準備中...',
       Offset(size.x / 2, size.y * 0.5),
       fontSize: 18,
       color: const Color(0xFF666666),
@@ -6484,7 +6313,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
     _drawCenteredText(
       canvas,
-      '단일 소환',
+      '単体召喚',
       Offset(singleButtonRect.center.dx, singleButtonRect.center.dy - 15),
       fontSize: 20,
       color: const Color(0xFFFFFFFF),
@@ -6576,7 +6405,6 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   }
 
   void _renderCharacterCollection(Canvas canvas) {
-    const double navBarHeight = 60.0;
     const double collectionStartY = 165.0;
     const double bottomMenuHeight = 70.0;
     const double availableHeight = 600.0 - collectionStartY - bottomMenuHeight - 20;
@@ -6584,7 +6412,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     // 타이틀
     _drawCenteredText(
       canvas,
-      '📖 캐릭터 도감',
+      '📖 キャラクター図鑑',
       Offset(size.x / 2, collectionStartY),
       fontSize: 16,
       color: const Color(0xFF000000),
@@ -6601,7 +6429,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
     _drawCenteredText(
       canvas,
-      '보유: $ownedCount / $totalCharacters',
+      '所持: $ownedCount / $totalCharacters',
       Offset(size.x / 2, collectionStartY + 25),
       fontSize: 12,
       color: const Color(0xFF666666),
@@ -6879,7 +6707,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       // 안내 메시지
       _drawCenteredText(
         canvas,
-        '화면을 터치하여 계속',
+        '画面をタッチして続行',
         Offset(size.x / 2, size.y - 120),
         fontSize: 16,
         color: const Color(0xFFFFFFFF),
@@ -6899,7 +6727,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
     _drawCenteredText(
       canvas,
-      '준비 중...',
+      '準備中...',
       Offset(size.x / 2, size.y * 0.5),
       fontSize: 18,
       color: const Color(0xFF666666),
@@ -6925,11 +6753,11 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
     // 메뉴 아이템들
     final menuItems = [
-      {'icon': '🏪', 'label': '상점', 'menu': BottomMenu.shop},
-      {'icon': '🎒', 'label': '인벤토리', 'menu': BottomMenu.inventory},
-      {'icon': '🏠', 'label': '홈', 'menu': BottomMenu.home},
-      {'icon': '🎰', 'label': '뽑기', 'menu': BottomMenu.gacha},
-      {'icon': '⚙️', 'label': '설정', 'menu': BottomMenu.settings},
+      {'icon': '🏪', 'label': 'ショップ', 'menu': BottomMenu.shop},
+      {'icon': '🎒', 'label': 'インベントリ', 'menu': BottomMenu.inventory},
+      {'icon': '🏠', 'label': 'ホーム', 'menu': BottomMenu.home},
+      {'icon': '🎰', 'label': 'ガチャ', 'menu': BottomMenu.gacha},
+      {'icon': '⚙️', 'label': '設定', 'menu': BottomMenu.settings},
     ];
 
     for (int i = 0; i < menuItems.length; i++) {
@@ -7077,7 +6905,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     );
 
     _drawCenteredText(
-      canvas, '다음 라운드 준비 중...',
+      canvas, '次のラウンド準備中...',
       Offset(size.x / 2, size.y * 0.59),
       fontSize: 13,
       color: const Color(0xFF888888),
@@ -7095,7 +6923,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     // 제목
     _drawCenteredText(
       canvas,
-      '일시정지',
+      '一時停止',
       Offset(size.x / 2, size.y * 0.35),
       fontSize: 32,
       color: const Color(0xFFFFFFFF),
@@ -7113,7 +6941,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     canvas.drawRect(resumeRect, buttonPaint);
     _drawCenteredText(
       canvas,
-      '재개',
+      '再開',
       Offset(
         resumeRect.left + resumeRect.width / 2,
         resumeRect.top + resumeRect.height / 2 - 8,
@@ -7126,7 +6954,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     canvas.drawRect(roundSelectRect, buttonPaint);
     _drawCenteredText(
       canvas,
-      '라운드 선택',
+      'ラウンド選択',
       Offset(
         roundSelectRect.left + roundSelectRect.width / 2,
         roundSelectRect.top + roundSelectRect.height / 2 - 8,
@@ -7139,7 +6967,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     canvas.drawRect(retryRect, buttonPaint);
     _drawCenteredText(
       canvas,
-      '재시작',
+      'リスタート',
       Offset(
         retryRect.left + retryRect.width / 2,
         retryRect.top + retryRect.height / 2 - 8,
@@ -7375,7 +7203,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     String label, {
     bool enabled = true,
   }) {
-    final bgColor = enabled ? const Color(0xFF3949AB) : const Color(0xFFB0BEC5);
+    // D-05: Violet Theme 통일 (#3949AB → #5B21B6)
+    final bgColor = enabled ? const Color(0xFF5B21B6) : const Color(0xFFB0BEC5);
 
     final bgPaint = Paint()..color = bgColor;
     final borderPaint = Paint()
@@ -7795,9 +7624,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     const double leftPad = 12.0;
     const double barHeight = 7.0;
 
-    // ── 반투명 HUD 배경 ──
+    // ── 반투명 HUD 배경 (D-03: 3행→2행 축소, 60→50px) ──
     final bgPaint = Paint()..color = const Color(0xCC000000);
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.x, 60), bgPaint);
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.x, 50), bgPaint);
 
     // ── 1행: HP바 ──
     final _CharacterUnit? mainUnit = () {
@@ -7952,28 +7781,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       color: const Color(0xFFAAAAAA),
     );
 
-    // ── D-1-5: 골드 표시 (HUD 하단, 좌측) ──
-    const double row3Y = topPad + 42;
-    final bgPaint2 = Paint()..color = const Color(0xCC000000);
-    canvas.drawRect(Rect.fromLTWH(0, 57, size.x, 18), bgPaint2);
-    _drawText(
-      canvas,
-      '🪙 ${_formatNumber(playerGold)}G',
-      Offset(leftPad, row3Y + 2),
-      fontSize: 11,
-      color: const Color(0xFFFFD700),
-    );
-
-    // D-1-5: 속성 아이콘 표시 (메인 캐릭터 속성, HUD row3 우측)
-    final String elemIcon = _elementIcon(_mainCharElement);
-    if (elemIcon.isNotEmpty) {
-      _drawText(
-        canvas,
-        elemIcon,
-        Offset(size.x - leftPad - 20, row3Y + 2),
-        fontSize: 12,
-      );
-    }
+    // D-03: HUD Row3 제거 — 골드는 _renderGoldDisplay()에서, 속성은 Row1에서 표시
   }
 
   // D-1-5: 속성 이모지 헬퍼
