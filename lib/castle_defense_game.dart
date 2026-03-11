@@ -1733,8 +1733,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
           unit.pos.setFrom(unit.towerFixedPos!);
         }
 
-        // 리디자인 B-2-5: 메인 캐릭터는 핸들러 이동 취소 후 스틱 이동 적용
-        // (핸들러의 공격 처리만 활용, 이동은 스틱으로 덮어씀)
+        // 메인 캐릭터: 스틱으로만 이동 (핸들러는 공격만 처리)
         if (!unit.isTower) {
           _applyMainCharacterMovement(unit, dt);
         }
@@ -1994,13 +1993,15 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       return;
     }
 
-    // 적을 향해 이동
+    // 적을 향해 이동 (타워만 — 메인캐릭터는 스틱으로 조작)
     if (distance > swordRange * 0.7) {
-      final dir = (target.pos - unit.pos).normalized();
-      unit.pos += dir * unit.moveSpeed * moveSpeedBuff * dt;
-      // 상단 경계 제한 적용
-      unit.pos.y = unit.pos.y.clamp(topBoundary, size.y);
-      unit.movingTowardsTarget = true;
+      if (unit.isTower) {
+        final dir = (target.pos - unit.pos).normalized();
+        unit.pos += dir * unit.moveSpeed * moveSpeedBuff * dt;
+        // 상단 경계 제한 적용
+        unit.pos.y = unit.pos.y.clamp(topBoundary, size.y);
+      }
+      unit.movingTowardsTarget = unit.isTower;
     } else {
       // 사거리 내: 검 휘두르기 시작
       unit.movingTowardsTarget = false;
@@ -2024,12 +2025,14 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     double moveSpeedBuff,
   ) {
     if (distance > attackRange) {
-      // 타겟까지 이동 (사거리 내로, 이동속도 버프 적용)
-      final dir = (target.pos - unit.pos).normalized();
-      unit.pos += dir * unit.moveSpeed * moveSpeedBuff * dt;
-      // 상단 경계 제한 적용
-      unit.pos.y = unit.pos.y.clamp(topBoundary, size.y);
-      unit.movingTowardsTarget = true;
+      // 타겟까지 이동 (타워만 — 메인캐릭터는 스틱으로 조작)
+      if (unit.isTower) {
+        final dir = (target.pos - unit.pos).normalized();
+        unit.pos += dir * unit.moveSpeed * moveSpeedBuff * dt;
+        // 상단 경계 제한 적용
+        unit.pos.y = unit.pos.y.clamp(topBoundary, size.y);
+      }
+      unit.movingTowardsTarget = unit.isTower;
     } else {
       // 사거리 내: 정지하고 공격
       unit.movingTowardsTarget = false;
@@ -2053,11 +2056,14 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     double moveSpeedBuff,
   ) {
     if (distance > attackRange) {
-      final dir = (target.pos - unit.pos).normalized();
-      unit.pos += dir * unit.moveSpeed * moveSpeedBuff * dt;
-      // 상단 경계 제한 적용
-      unit.pos.y = unit.pos.y.clamp(topBoundary, size.y);
-      unit.movingTowardsTarget = true;
+      // 타워만 이동 (메인캐릭터는 스틱으로 조작)
+      if (unit.isTower) {
+        final dir = (target.pos - unit.pos).normalized();
+        unit.pos += dir * unit.moveSpeed * moveSpeedBuff * dt;
+        // 상단 경계 제한 적용
+        unit.pos.y = unit.pos.y.clamp(topBoundary, size.y);
+      }
+      unit.movingTowardsTarget = unit.isTower;
     } else {
       unit.movingTowardsTarget = false;
       if (unit.attackCooldown <= 0) {
@@ -2107,11 +2113,14 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     }
 
     if (distance > attackRange) {
-      final dir = (target.pos - unit.pos).normalized();
-      unit.pos += dir * unit.moveSpeed * moveSpeedBuff * dt;
-      // 상단 경계 제한 적용
-      unit.pos.y = unit.pos.y.clamp(topBoundary, size.y);
-      unit.movingTowardsTarget = true;
+      // 타워만 이동 (메인캐릭터는 스틱으로 조작)
+      if (unit.isTower) {
+        final dir = (target.pos - unit.pos).normalized();
+        unit.pos += dir * unit.moveSpeed * moveSpeedBuff * dt;
+        // 상단 경계 제한 적용
+        unit.pos.y = unit.pos.y.clamp(topBoundary, size.y);
+      }
+      unit.movingTowardsTarget = unit.isTower;
     } else {
       unit.movingTowardsTarget = false;
       if (unit.attackCooldown <= 0) {
@@ -2134,11 +2143,14 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     double moveSpeedBuff,
   ) {
     if (distance > attackRange) {
-      final dir = (target.pos - unit.pos).normalized();
-      unit.pos += dir * unit.moveSpeed * moveSpeedBuff * dt;
-      // 상단 경계 제한 적용
-      unit.pos.y = unit.pos.y.clamp(topBoundary, size.y);
-      unit.movingTowardsTarget = true;
+      // 타워만 이동 (메인캐릭터는 스틱으로 조작)
+      if (unit.isTower) {
+        final dir = (target.pos - unit.pos).normalized();
+        unit.pos += dir * unit.moveSpeed * moveSpeedBuff * dt;
+        // 상단 경계 제한 적용
+        unit.pos.y = unit.pos.y.clamp(topBoundary, size.y);
+      }
+      unit.movingTowardsTarget = unit.isTower;
     } else {
       unit.movingTowardsTarget = false;
       if (unit.attackCooldown <= 0) {
