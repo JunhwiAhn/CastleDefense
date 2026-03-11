@@ -652,15 +652,8 @@ extension CombatSystem on CastleDefenseGame {
             break;
         }
 
-        // 리디자인 B-1-7: 타워 유닛은 고정 위치로 복원 (핸들러가 이동시키므로)
-        if (unit.isTower && unit.towerFixedPos != null) {
-          unit.pos.setFrom(unit.towerFixedPos!);
-        }
-
-        // 메인 캐릭터: 스틱으로만 이동 (핸들러는 공격만 처리)
-        if (!unit.isTower) {
-          _applyMainCharacterMovement(unit, dt);
-        }
+        // 전체 파티원: 스틱으로 함께 이동 (정사각형 포메이션)
+        _applyMainCharacterMovement(unit, dt);
       }
     }
   }

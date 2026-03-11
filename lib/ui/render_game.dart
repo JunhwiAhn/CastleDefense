@@ -241,7 +241,7 @@ extension GameRendering on CastleDefenseGame {
     _renderLoadingOverlay(canvas);
   }
 
-  // 리디자인: 성을 화면 중앙 80×80px 정사각형으로 변경
+  // 리디자인: 성을 화면 중앙에 배치 (castleHeight 기준)
   Rect get _castleRect => Rect.fromCenter(
     center: Offset(size.x / 2, size.y / 2),
     width: castleHeight,
@@ -383,8 +383,8 @@ extension GameRendering on CastleDefenseGame {
       );
     }
 
-    // 타워 슬롯 렌더링 (D-4-2)
-    _renderTowerSlots(canvas);
+    // 타워 슬롯 비활성 (4인 포메이션 전환으로 타워 고정 위치 없음)
+    // _renderTowerSlots(canvas);
 
     // 성 HP 바 렌더링 (D-1-2)
     _renderCastleHP(canvas);

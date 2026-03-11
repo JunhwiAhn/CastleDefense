@@ -34,7 +34,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   // -----------------------------
   // 기본 설정
   // -----------------------------
-  final double castleHeight = 80.0; // 2배로 확대
+  final double castleHeight = 50.0; // 성 크기 축소
   // 리디자인 B-2-16: 성 최대 HP (상점 업그레이드로 증가)
   int get castleMaxHp => 200 + _shopCastleMaxHpCount * 20;
   int castleHp = 200; // 리디자인: 성 현재 HP
@@ -43,9 +43,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   // 몬스터 설정
   final double monsterRadius = 16.0;
   // 리디자인: 타입별 이동 속도 (낙하 속도 삭제)
-  static const double _normalMonsterSpeed = 40.0;
-  static const double _miniBossSpeed = 30.0;
-  static const double _bossSpeed = 25.0;
+  static const double _normalMonsterSpeed = 25.0; // 속도 감소 (40→25)
+  static const double _miniBossSpeed = 18.0; // 속도 감소 (30→18)
+  static const double _bossSpeed = 15.0; // 속도 감소 (25→15)
 
   // 무기 (프로토타입)
   final int weaponDamage = 1; // 기본검 데미지
@@ -197,7 +197,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
   // 파티 설정 (4개 슬롯)
   // 리디자인: 5슬롯 (0=메인캐릭터, 1-4=타워)
-  final List<String?> partySlots = [null, null, null, null, null];
+  final List<String?> partySlots = [null, null, null, null];
   bool showPartySelectionPopup = false;
   int selectedPartySlotIndex = -1; // 현재 선택 중인 파티 슬롯
   double partyPopupScrollOffset = 0.0; // 파티 팝업 스크롤 오프셋
@@ -923,9 +923,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     const double slotSpacing = 10.0; // 도감과 동일한 간격
     final double slotY = size.y - bottomMenuHeight - slotSize - 8.0; // 푸터 바로 위
 
-    // 5슬롯 (메인1 + 타워4) 탭 처리
-    for (int i = 0; i < 5; i++) {
-      final double slotX = (size.x - (slotSize * 5 + slotSpacing * 4)) / 2 + i * (slotSize + slotSpacing);
+    // 4슬롯 (정사각형 포메이션) 탭 처리
+    for (int i = 0; i < 4; i++) {
+      final double slotX = (size.x - (slotSize * 4 + slotSpacing * 3)) / 2 + i * (slotSize + slotSpacing);
       final slotRect = Rect.fromLTWH(slotX, slotY, slotSize, slotSize);
 
       if (slotRect.contains(offset)) {
@@ -1122,19 +1122,19 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     gameState = GameState.playing;
   }
 
-  // 파티 슬롯에서 캐릭터 유닛을 생성
+  // 파티 슬롯에서 캐릭터 유닛을 생성 (4인 정사각형 포메이션)
   void _spawnCharacterUnits() {
     characterUnits.clear(); // 기존 유닛 제거
 
-    // 리디자인: 타워 고정 위치 (성 중심 ±70px 대각선 4곳)
-    const towerOffsets = [
-      [-70.0, -70.0], // T1: 왼쪽 위
-      [ 70.0, -70.0], // T2: 오른쪽 위
-      [-70.0,  70.0], // T3: 왼쪽 아래
-      [ 70.0,  70.0], // T4: 오른쪽 아래
+    // 4인 정사각형 포메이션 오프셋 (메인 캐릭터 기준 상대 위치)
+    const formationOffsets = [
+      [-20.0, -20.0], // 왼쪽 위
+      [ 20.0, -20.0], // 오른쪽 위
+      [-20.0,  20.0], // 왼쪽 아래
+      [ 20.0,  20.0], // 오른쪽 아래
     ];
 
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 4; i++) {
       final instanceId = partySlots[i];
       if (instanceId != null) {
         final character = ownedCharacters.firstWhere(
@@ -1146,20 +1146,12 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
           final definition = CharacterDefinitions.byId(character.characterId);
           final maxHp = definition.baseStats.maxHp * (1 + character.level * 0.1);
 
-          final bool isTower = i > 0;
-          Vector2 spawnPos;
-          Vector2? fixedPos;
-
-          if (isTower) {
-            // 타워: 성 중심에서 ±70px 대각선 고정 위치
-            final offset = towerOffsets[i - 1];
-            spawnPos = Vector2(castleCenterX + offset[0], castleCenterY + offset[1]);
-            fixedPos = spawnPos.clone();
-          } else {
-            // 메인 캐릭터: 성 오른쪽 옆에서 시작
-            spawnPos = Vector2(castleCenterX + 60.0, castleCenterY);
-            fixedPos = null;
-          }
+          // 모든 파티원이 함께 이동 (타워 고정 없음)
+          final offset = formationOffsets[i];
+          final spawnPos = Vector2(
+            castleCenterX + 60.0 + offset[0],
+            castleCenterY + offset[1],
+          );
 
           final unit = _CharacterUnit(
             instanceId: instanceId,
@@ -1168,8 +1160,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
             pos: spawnPos,
             currentHp: maxHp,
             maxHp: maxHp,
-            isTower: isTower,
-            towerFixedPos: fixedPos,
+            isTower: false, // 모두 메인캐릭터처럼 이동
+            towerFixedPos: null, // 고정 위치 없음
           );
 
           characterUnits.add(unit);
@@ -1180,8 +1172,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
   // 파티 슬롯 설정을 게임 캐릭터 슬롯에 반영
   void _applyPartyToCharacterSlots() {
-    // 리디자인: 5슬롯 (0=메인, 1-4=타워)
-    for (int i = 0; i < 5; i++) {
+    // 4슬롯 (정사각형 포메이션)
+    for (int i = 0; i < 4; i++) {
       if (i >= characterSlots.length) break;
 
       final instanceId = partySlots[i];

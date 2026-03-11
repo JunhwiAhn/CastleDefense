@@ -1295,9 +1295,9 @@ extension UIRendering on CastleDefenseGame {
     const double slotSpacing = 10.0; // 도감과 동일한 간격
     final double slotY = size.y - bottomMenuHeight - slotSize - 8.0; // 푸터 바로 위
 
-    // 파티 설정 배경 (반투명 회색) - 5슬롯 (메인1 + 타워4)
+    // 파티 설정 배경 (반투명 회색) - 4슬롯 (정사각형 포메이션)
     const double bgPadding = 10.0;
-    final double bgWidth = (slotSize * 5) + (slotSpacing * 4) + (bgPadding * 2);
+    final double bgWidth = (slotSize * 4) + (slotSpacing * 3) + (bgPadding * 2);
     final double bgX = (size.x - bgWidth) / 2;
     final bgRect = Rect.fromLTWH(bgX, slotY - bgPadding - 15, bgWidth, slotSize + bgPadding * 2 + 15);
 
@@ -1316,9 +1316,9 @@ extension UIRendering on CastleDefenseGame {
       color: const Color(0xFFFFFFFF),
     );
 
-    // 5개의 슬롯 렌더링 (메인1 + 타워4)
-    for (int i = 0; i < 5; i++) {
-      final double slotX = (size.x - (slotSize * 5 + slotSpacing * 4)) / 2 + i * (slotSize + slotSpacing);
+    // 4개의 슬롯 렌더링 (정사각형 포메이션)
+    for (int i = 0; i < 4; i++) {
+      final double slotX = (size.x - (slotSize * 4 + slotSpacing * 3)) / 2 + i * (slotSize + slotSpacing);
       final slotRect = Rect.fromLTWH(slotX, slotY, slotSize, slotSize);
 
       final instanceId = partySlots[i];
@@ -2642,7 +2642,7 @@ extension UIRendering on CastleDefenseGame {
     const double barHeight = 6.0;
     const double barMargin = 6.0;
     final double cx = size.x / 2;
-    final double castleTop = size.y / 2 - 40.0; // 80px 높이의 절반
+    final double castleTop = size.y / 2 - castleHeight / 2; // 성 높이의 절반
     final double hpRatio =
         castleMaxHp == 0 ? 0 : (castleHp / castleMaxHp).clamp(0.0, 1.0);
     final double barX = cx - barWidth / 2;
