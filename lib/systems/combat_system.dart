@@ -830,27 +830,29 @@ extension CombatSystem on CastleDefenseGame {
 
   // 리디자인 B-2-8/B-2-9: XP 젬 수명 감소 + 메인 캐릭터 회수
   void _updateXpGems(double dt) {
-    final mainUnit = _mainCharAlive
-        ? characterUnits.where((u) => !u.isTower).firstOrNull
-        : null;
-    final double collectRadius = _xpCollectRadius; // 리디자인 B-2-12: 자석 반경 포함
+    final double collectRadius = _xpCollectRadius;
+    final double collectRadiusSq = collectRadius * collectRadius;
 
     for (int i = xpGems.length - 1; i >= 0; i--) {
       final gem = xpGems[i];
       gem.lifeTimer -= dt;
 
-      // B-3-3: dist² 비교 (sqrt 없는 최적화)
-      if (mainUnit != null) {
-        final dx = gem.pos.x - mainUnit.pos.x;
-        final dy = gem.pos.y - mainUnit.pos.y;
-        if (dx * dx + dy * dy <= collectRadius * collectRadius) {
-          // 리디자인 B-2-10: XP 가산 및 레벨업 체크
+      // 4캐릭터 중 아무나 접촉하면 수집
+      bool collected = false;
+      for (final unit in characterUnits) {
+        final dx = gem.pos.x - unit.pos.x;
+        final dy = gem.pos.y - unit.pos.y;
+        if (dx * dx + dy * dy <= collectRadiusSq) {
           playerXp += gem.xpValue;
-          _roundXpGained += gem.xpValue; // D-1-6: 라운드 XP 추적
+          _roundXpGained += gem.xpValue;
           _checkLevelUp();
-          xpGems.removeAt(i);
-          continue;
+          collected = true;
+          break;
         }
+      }
+      if (collected) {
+        xpGems.removeAt(i);
+        continue;
       }
 
       // 수명 종료
@@ -860,24 +862,23 @@ extension CombatSystem on CastleDefenseGame {
     }
   }
 
-  // 리디자인 B-2-15: 골드 드롭 회수 (메인 캐릭터 접촉)
+  // 골드 드롭 회수 (4캐릭터 중 아무나 접촉)
   void _updateGoldDrops() {
-    final mainUnit = _mainCharAlive
-        ? characterUnits.where((u) => !u.isTower).firstOrNull
-        : null;
-    if (mainUnit == null) return;
+    if (characterUnits.isEmpty) return;
     const double collectRadius = 24.0;
-
-    // B-3-3: dist² 비교 (sqrt 없는 최적화)
     final double collectRadiusSq = collectRadius * collectRadius;
+
     for (int i = goldDrops.length - 1; i >= 0; i--) {
       final drop = goldDrops[i];
-      final dx = drop.pos.x - mainUnit.pos.x;
-      final dy = drop.pos.y - mainUnit.pos.y;
-      if (dx * dx + dy * dy <= collectRadiusSq) {
-        playerGold += drop.goldValue;
-        _roundGoldGained += drop.goldValue; // D-1-6: 라운드 골드 추적
-        goldDrops.removeAt(i);
+      for (final unit in characterUnits) {
+        final dx = drop.pos.x - unit.pos.x;
+        final dy = drop.pos.y - unit.pos.y;
+        if (dx * dx + dy * dy <= collectRadiusSq) {
+          playerGold += drop.goldValue;
+          _roundGoldGained += drop.goldValue;
+          goldDrops.removeAt(i);
+          break;
+        }
       }
     }
   }
