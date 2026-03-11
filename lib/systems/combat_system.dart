@@ -631,7 +631,7 @@ extension CombatSystem on CastleDefenseGame {
               // 총잡이: 연속 발사 (두두두)
               _handleGunslingerUnit(unit, target, distance, dt, 1.0 * atkMult, physicalDealerRange * rangeMult, moveSpeedBuff);
             } else {
-              _handleRangedUnit(unit, target, distance, dt, 1.0 * atkMult, physicalDealerRange * rangeMult, 3.0, moveSpeedBuff);
+              _handleRangedUnit(unit, target, distance, dt, 1.0 * atkMult, physicalDealerRange * rangeMult, 6.0, moveSpeedBuff);
             }
             break;
 
@@ -642,12 +642,12 @@ extension CombatSystem on CastleDefenseGame {
 
           case RoleType.priest:
             // 성직자: 원거리 공격 (1 데미지, 증가된 사거리, 느린 공격속도)
-            _handleRangedUnit(unit, target, distance, dt, 1.0 * atkMult, priestRange * rangeMult, 1.5, moveSpeedBuff);
+            _handleRangedUnit(unit, target, distance, dt, 1.0 * atkMult, priestRange * rangeMult, 3.0, moveSpeedBuff);
             break;
 
           case RoleType.utility:
             // 유틸리티: 원거리 투사물 공격
-            _handleRangedUnit(unit, target, distance, dt, 1.0 * atkMult, rangedRange * rangeMult, 2.0, moveSpeedBuff);
+            _handleRangedUnit(unit, target, distance, dt, 1.0 * atkMult, rangedRange * rangeMult, 4.0, moveSpeedBuff);
             break;
         }
 
@@ -937,7 +937,7 @@ extension CombatSystem on CastleDefenseGame {
         unit.swingProgress = 0.0;
         unit.swordSwingAngle = 0.0;
         // 쿨다운 설정
-        unit.attackCooldown = 1.0 / (unit.attackSpeed * 1.5);
+        unit.attackCooldown = 1.0 / (unit.attackSpeed * 3.0);
       }
       return;
     }
@@ -1034,7 +1034,7 @@ extension CombatSystem on CastleDefenseGame {
             targetMonster: i == 0 ? target : null, // 중앙 화살만 유도
           ));
         }
-        unit.attackCooldown = 1.0 / (unit.attackSpeed * 2.0);
+        unit.attackCooldown = 1.0 / (unit.attackSpeed * 4.0);
       }
     }
   }
@@ -1076,7 +1076,7 @@ extension CombatSystem on CastleDefenseGame {
         // 연속 발사 시작 (5발)
         unit.burstShotsRemaining = 5;
         unit.burstTimer = 0.0;
-        unit.attackCooldown = 1.0 / (unit.attackSpeed * 1.5);
+        unit.attackCooldown = 1.0 / (unit.attackSpeed * 3.0);
       }
     }
   }
@@ -1117,7 +1117,7 @@ extension CombatSystem on CastleDefenseGame {
           splashRadius: 50.0, // 스플래시 범위
           isMagic: true,
         ));
-        unit.attackCooldown = 1.0 / (unit.attackSpeed * 1.5);
+        unit.attackCooldown = 1.0 / (unit.attackSpeed * 3.0);
       }
     }
   }
@@ -1223,8 +1223,8 @@ extension CombatSystem on CastleDefenseGame {
 
   // 캐릭터-몬스터 충돌 체크 (뱀파이어 서바이버 스타일)
   void _checkCharacterMonsterCollisions() {
-    const double collisionDamage = 1; // 충돌 데미지
-    const double hitCooldown = 0.2; // 0.2초 쿨다운
+    const double collisionDamage = 2; // 충돌 데미지 (1→2)
+    const double hitCooldown = 0.1; // 0.1초 쿨다운 (0.2→0.1)
 
     for (final unit in characterUnits) {
       for (final monster in monsters) {
