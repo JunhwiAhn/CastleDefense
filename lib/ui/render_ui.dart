@@ -2638,17 +2638,18 @@ extension UIRendering on CastleDefenseGame {
   // D-1-2: 성 HP 바 (성 스프라이트 바로 위, 80×6px, 녹→황→적)
   // ============================================================
   void _renderCastleHP(Canvas canvas) {
-    const double barWidth = 80.0;
-    const double barHeight = 6.0;
-    const double barMargin = 6.0;
-    final double cx = size.x / 2;
-    final double castleTop = size.y / 2 - castleHeight / 2; // 성 높이의 절반
+    // 성벽 위에 전체 너비 HP바
+    final double barWidth = size.x * 0.6; // 화면 60%
+    const double barHeight = 8.0;
+    const double barMargin = 8.0;
+    final double cx = castleCenterX;
+    final double castleTop = castleCenterY - castleHeight / 2;
     final double hpRatio =
         castleMaxHp == 0 ? 0 : (castleHp / castleMaxHp).clamp(0.0, 1.0);
     final double barX = cx - barWidth / 2;
     final double barY = castleTop - barHeight - barMargin;
 
-    // 성 HP 바 (이미지 바 우선)
+    // HP 바 색상
     final Color barColor;
     if (hpRatio > 0.66) {
       barColor = const Color(0xFF4CAF50);
@@ -2669,14 +2670,14 @@ extension UIRendering on CastleDefenseGame {
       fallbackFillColor: barColor,
     );
 
-    // HP 수치 텍스트 (아이콘 이미지 우선)
+    // HP 수치 텍스트
     _drawImageIcon(canvas, 'ui/icon_heal.png',
-        Offset(cx - 42, barY - 10), 14, fallbackEmoji: '🏰');
+        Offset(cx - 50, barY - 12), 14, fallbackEmoji: '🏰');
     _drawCenteredText(
       canvas,
-      '$castleHp / $castleMaxHp',
-      Offset(cx + 6, barY - 10),
-      fontSize: 11,
+      'CASTLE  $castleHp / $castleMaxHp',
+      Offset(cx + 6, barY - 12),
+      fontSize: 12,
       color: const Color(0xFFFFFFFF),
     );
   }

@@ -7,8 +7,8 @@ extension CombatSystem on CastleDefenseGame {
   // -----------------------------
   void _updateMonsters(double dt) {
     // 리디자인: groundY, monsterFallSpeed 삭제 (낙하 로직 제거)
-    // 리디자인: 성 접촉 반경 50px (2D 거리 체크)
-    const double castleContactRadius = 50.0;
+    // 성벽 접촉: 몬스터 Y가 성벽 상단에 도달하면 접촉
+    final double wallTop = castleCenterY - castleHeight / 2;
 
     for (var i = monsters.length - 1; i >= 0; i--) {
       final m = monsters[i];
@@ -72,8 +72,8 @@ extension CombatSystem on CastleDefenseGame {
         final dy = targetY - m.pos.y;
         final dist = sqrt(dx * dx + dy * dy);
 
-        // 성에 도달 체크 (어그로 없을 때만, 2D 거리)
-        if (m.aggroTarget == null && dist < castleContactRadius) {
+        // 성벽 도달 체크 (어그로 없을 때만, Y좌표 기준)
+        if (m.aggroTarget == null && m.pos.y + monsterRadius >= wallTop) {
           // 보스/미니보스: 지속 데미지
           if (m.type == MonsterType.boss || m.type == MonsterType.miniBoss) {
             m.attackingCastle = true;
@@ -164,16 +164,15 @@ extension CombatSystem on CastleDefenseGame {
 
   // 리디자인: 4방향 스폰 (화면 외곽 20px 위치에서 랜덤 스폰)
   Vector2 _randomEdgeSpawnPos() {
-    final side = _random.nextInt(4); // 0=위, 1=아래, 2=왼쪽, 3=오른쪽
+    // 성벽이 하단이므로 위/왼쪽/오른쪽 3방향에서만 스폰
+    final side = _random.nextInt(3); // 0=위, 1=왼쪽, 2=오른쪽
     switch (side) {
       case 0: // 위
         return Vector2(_random.nextDouble() * size.x, -monsterRadius * 2);
-      case 1: // 아래
-        return Vector2(_random.nextDouble() * size.x, size.y + monsterRadius * 2);
-      case 2: // 왼쪽
-        return Vector2(-monsterRadius * 2, _random.nextDouble() * size.y);
-      case 3: // 오른쪽
-        return Vector2(size.x + monsterRadius * 2, _random.nextDouble() * size.y);
+      case 1: // 왼쪽
+        return Vector2(-monsterRadius * 2, _random.nextDouble() * size.y * 0.7);
+      case 2: // 오른쪽
+        return Vector2(size.x + monsterRadius * 2, _random.nextDouble() * size.y * 0.7);
       default:
         return Vector2(_random.nextDouble() * size.x, -monsterRadius * 2);
     }
@@ -527,7 +526,7 @@ extension CombatSystem on CastleDefenseGame {
     // D-3-5: 화면 중앙에서 충격파 VFX 추가
     final maxDim = max(size.x, size.y) * 0.75;
     vfxEffects.add(_VfxEffect(
-      pos: Vector2(castleCenterX, castleCenterY),
+      pos: Vector2(castleCenterX, size.y / 2),
       type: VfxType.shockwave,
       duration: 0.5,
       color: const Color(0xCCFFFFFF), // shockwaveWhite
@@ -689,8 +688,10 @@ extension CombatSystem on CastleDefenseGame {
 
     // 리더 위치를 포메이션 여유분 포함하여 클램프 (끝에서 겹침 방지)
     const double margin = 25.0; // 포메이션 오프셋(20) + 여유(5)
+    // 하단은 성벽 위까지만 이동 가능
+    final double maxY = castleCenterY - castleHeight / 2 - margin;
     leader.pos.x = leader.pos.x.clamp(margin, size.x - margin);
-    leader.pos.y = leader.pos.y.clamp(margin, size.y - margin);
+    leader.pos.y = leader.pos.y.clamp(margin, maxY);
 
     // 나머지 유닛을 리더 기준 오프셋으로 배치
     for (int i = 0; i < characterUnits.length; i++) {
@@ -820,10 +821,10 @@ extension CombatSystem on CastleDefenseGame {
       _mainCharHp = _mainCharMaxHp;
       _invincibleTimer = _effectiveInvincibleDuration; // C-13: 동적 무적시간
 
-      // 메인 유닛 위치를 성 옆으로 이동
+      // 메인 유닛 위치를 성벽 앞(위쪽)으로 이동
       final mainUnit = characterUnits.where((u) => !u.isTower).firstOrNull;
       if (mainUnit != null) {
-        mainUnit.pos = Vector2(castleCenterX + 60.0, castleCenterY);
+        mainUnit.pos = Vector2(castleCenterX, castleCenterY - castleHeight - 40);
       }
     }
   }

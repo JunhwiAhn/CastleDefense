@@ -241,116 +241,85 @@ extension GameRendering on CastleDefenseGame {
     _renderLoadingOverlay(canvas);
   }
 
-  // 리디자인: 성을 화면 중앙에 배치 (castleHeight 기준)
-  Rect get _castleRect => Rect.fromCenter(
-    center: Offset(size.x / 2, size.y / 2),
-    width: castleHeight,
-    height: castleHeight,
+  // 성벽: 화면 하단 전체 너비
+  Rect get _castleRect => Rect.fromLTWH(
+    0, castleCenterY - castleHeight / 2,
+    size.x, castleHeight,
   );
 
-  // D-4-1: 새 디자인 — 화면 중앙 80×80px 성 스프라이트 (HP 3단계 시각 변화)
+  // 하단 성벽 스타일 렌더링 (화면 전체 너비, HP 3단계 시각 변화)
   void _renderCastle(Canvas canvas) {
-    final double cx = castleCenterX;
-    final double cy = castleCenterY;
-
-    // HP 비율에 따른 3단계 색상
     final double hpRatio =
         castleMaxHp == 0 ? 0 : (castleHp / castleMaxHp).clamp(0.0, 1.0);
-    final Color castleBaseColor;
-    final Color castleRoofColor;
+
+    // HP 비율에 따른 3단계 색상
+    final Color wallColor;
+    final Color crenelColor;
     if (hpRatio > 0.66) {
-      castleBaseColor = const Color(0xFF546E7A); // 양호: 블루그레이
-      castleRoofColor = const Color(0xFF37474F);
+      wallColor = const Color(0xFF546E7A); // 양호: 블루그레이
+      crenelColor = const Color(0xFF37474F);
     } else if (hpRatio > 0.33) {
-      castleBaseColor = const Color(0xFF6D4C41); // 손상: 갈색
-      castleRoofColor = const Color(0xFF4E342E);
+      wallColor = const Color(0xFF6D4C41); // 손상: 갈색
+      crenelColor = const Color(0xFF4E342E);
     } else {
-      castleBaseColor = const Color(0xFF7B3535); // 위기: 어두운 빨강
-      castleRoofColor = const Color(0xFF5D2626);
+      wallColor = const Color(0xFF7B3535); // 위기: 어두운 빨강
+      crenelColor = const Color(0xFF5D2626);
     }
 
     // 성 스프라이트 선택: castleFortressImage 우선, 기존 castleImage 폴백
     final Image? activeCastleImg = castleFortressImage ?? castleImage;
     if (activeCastleImg != null) {
-      // 스프라이트로 성 렌더링
+      // 스프라이트를 성벽 전체에 타일링
       final srcRect = Rect.fromLTWH(
         0, 0,
         activeCastleImg.width.toDouble(),
         activeCastleImg.height.toDouble(),
       );
-      // HP 비율에 따른 색조 오버레이 알파
-      final double tintAlpha = hpRatio > 0.66
-          ? 0.0    // 양호: 틴트 없음
-          : hpRatio > 0.33
-              ? 0.2  // 손상: 갈색 틴트
-              : 0.4; // 위기: 빨간 틴트
+      // HP 비율에 따른 틴트
+      final double tintAlpha = hpRatio > 0.66 ? 0.0 : hpRatio > 0.33 ? 0.2 : 0.4;
       canvas.drawImageRect(activeCastleImg, srcRect, _castleRect, Paint());
       if (tintAlpha > 0) {
         final tintColor = hpRatio > 0.33
-            ? Color.fromRGBO(109, 76, 65, tintAlpha)    // 갈색
-            : Color.fromRGBO(123, 53, 53, tintAlpha);   // 어두운 빨강
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(_castleRect, const Radius.circular(4)),
-          Paint()..color = tintColor,
-        );
+            ? Color.fromRGBO(109, 76, 65, tintAlpha)
+            : Color.fromRGBO(123, 53, 53, tintAlpha);
+        canvas.drawRect(_castleRect, Paint()..color = tintColor);
       }
     } else {
-      // 폴백: Canvas 절차적 드로잉
-      final castleBodyPaint = Paint()..color = castleBaseColor;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(_castleRect, const Radius.circular(6)),
-        castleBodyPaint,
-      );
+      // 폴백: Canvas 성벽 드로잉
+      final wallPaint = Paint()..color = wallColor;
+      canvas.drawRect(_castleRect, wallPaint);
 
-      // 성문 (하단 중앙 아치형)
-      const double gateW = 20.0;
-      const double gateH = 26.0;
-      final gatePaint = Paint()..color = const Color(0xFF1A1A1A);
-      canvas.drawRRect(
-        RRect.fromRectAndCorners(
-          Rect.fromLTWH(cx - gateW / 2, _castleRect.bottom - gateH, gateW, gateH),
-          topLeft: const Radius.circular(10),
-          topRight: const Radius.circular(10),
-        ),
-        gatePaint,
-      );
-
-      // 흉벽 (상단 4개 돌출부)
-      final crenelPaint = Paint()..color = castleRoofColor;
-      for (final xPos in [
-        _castleRect.left + 4.0,
-        _castleRect.left + 18.0,
-        _castleRect.right - 28.0,
-        _castleRect.right - 12.0,
-      ]) {
+      // 성벽 상단 흉벽 (크레넬) — 전체 너비에 걸쳐 반복
+      final crenelPaint = Paint()..color = crenelColor;
+      const double crenelW = 12.0;
+      const double crenelH = 10.0;
+      const double crenelGap = 8.0;
+      double xPos = _castleRect.left + 4.0;
+      while (xPos + crenelW <= _castleRect.right) {
         canvas.drawRect(
-          Rect.fromLTWH(xPos, _castleRect.top - 9, 8, 11),
+          Rect.fromLTWH(xPos, _castleRect.top - crenelH + 2, crenelW, crenelH),
           crenelPaint,
         );
+        xPos += crenelW + crenelGap;
       }
 
-      // 창문 (좌우, 황금색 반투명)
-      final windowPaint = Paint()
-        ..color = const Color(0xFFFFD54F).withValues(alpha: 0.6);
-      for (final wc in [Offset(cx - 18, cy - 10), Offset(cx + 18, cy - 10)]) {
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(
-            Rect.fromCenter(center: wc, width: 10, height: 12),
-            const Radius.circular(5),
-          ),
-          windowPaint,
-        );
-      }
+      // 성벽 돌 질감 라인
+      final stonePaint = Paint()
+        ..color = const Color(0x33000000)
+        ..strokeWidth = 0.5;
+      final midY = _castleRect.top + castleHeight / 2;
+      canvas.drawLine(
+        Offset(_castleRect.left, midY),
+        Offset(_castleRect.right, midY),
+        stonePaint,
+      );
 
       // 외곽 테두리
       final borderPaint = Paint()
         ..color = const Color(0x88FFFFFF)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(_castleRect, const Radius.circular(6)),
-        borderPaint,
-      );
+      canvas.drawRect(_castleRect, borderPaint);
     }
 
     // 위기 상태 균열
@@ -359,32 +328,23 @@ extension GameRendering on CastleDefenseGame {
         ..color = const Color(0xAAFF5252)
         ..strokeWidth = 1.5
         ..style = PaintingStyle.stroke;
-      canvas.drawLine(
-        Offset(cx - 15, _castleRect.top + 10),
-        Offset(cx - 5, _castleRect.top + 30),
-        crackPaint,
-      );
-      canvas.drawLine(
-        Offset(cx + 10, _castleRect.top + 15),
-        Offset(cx + 20, _castleRect.top + 35),
-        crackPaint,
-      );
+      // 성벽 전체에 3개 균열 분산
+      for (final cx in [size.x * 0.2, size.x * 0.5, size.x * 0.8]) {
+        canvas.drawLine(
+          Offset(cx - 8, _castleRect.top + 5),
+          Offset(cx + 5, _castleRect.bottom - 5),
+          crackPaint,
+        );
+      }
     }
 
-    // D-3-1: 성 피격 점멸 연출 (castleFlashTimer > 0일 때 빨간 오버레이)
+    // D-3-1: 성 피격 점멸 연출
     if (castleFlashTimer > 0) {
-      // 0.2초 동안 알파가 점진적으로 줄어드는 빨간 점멸
       final double flashAlpha = (castleFlashTimer / 0.2).clamp(0.0, 1.0) * 0.6;
       final flashPaint = Paint()
-        ..color = Color.fromRGBO(244, 67, 54, flashAlpha); // hpRed
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(_castleRect, const Radius.circular(6)),
-        flashPaint,
-      );
+        ..color = Color.fromRGBO(244, 67, 54, flashAlpha);
+      canvas.drawRect(_castleRect, flashPaint);
     }
-
-    // 타워 슬롯 비활성 (4인 포메이션 전환으로 타워 고정 위치 없음)
-    // _renderTowerSlots(canvas);
 
     // 성 HP 바 렌더링 (D-1-2)
     _renderCastleHP(canvas);

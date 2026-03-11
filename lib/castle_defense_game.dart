@@ -294,7 +294,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
   // 성 중심 좌표 (화면 중앙)
   double get castleCenterX => size.x / 2;
-  double get castleCenterY => size.y / 2;
+  double get castleCenterY => size.y - castleHeight / 2 - 10; // 화면 맨 아래 배치
 
   int get killedMonsters => defeatedMonsters;
 
@@ -1149,8 +1149,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
           // 모든 파티원이 함께 이동 (타워 고정 없음)
           final offset = formationOffsets[i];
           final spawnPos = Vector2(
-            castleCenterX + 60.0 + offset[0],
-            castleCenterY + offset[1],
+            castleCenterX + offset[0],
+            castleCenterY - castleHeight - 40 + offset[1],
           );
 
           final unit = _CharacterUnit(
