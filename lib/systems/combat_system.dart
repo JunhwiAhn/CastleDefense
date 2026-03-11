@@ -652,29 +652,58 @@ extension CombatSystem on CastleDefenseGame {
             break;
         }
 
-        // 전체 파티원: 스틱으로 함께 이동 (정사각형 포메이션)
-        _applyMainCharacterMovement(unit, dt);
+        // 공격 처리만 (이동은 포메이션 단위로 별도 처리)
       }
     }
+
+    // 전체 파티: 리더 기준 포메이션 이동
+    _applyFormationMovement(dt);
   }
 
-  // 리디자인 B-2-5: 메인 캐릭터 스틱 이동
-  void _applyMainCharacterMovement(_CharacterUnit unit, double dt) {
-    if (!_stickActive) return;
+  // 4인 정사각형 포메이션 오프셋
+  static const _formationOffsets = [
+    [-20.0, -20.0], // 왼쪽 위
+    [ 20.0, -20.0], // 오른쪽 위
+    [-20.0,  20.0], // 왼쪽 아래
+    [ 20.0,  20.0], // 오른쪽 아래
+  ];
 
-    final dx = _stickKnobPos.x - _stickBasePos.x;
-    final dy = _stickKnobPos.y - _stickBasePos.y;
-    final dist = sqrt(dx * dx + dy * dy);
+  // 리더 기준 포메이션 이동 (화면 끝에서 겹치지 않음)
+  void _applyFormationMovement(double dt) {
+    if (characterUnits.isEmpty) return;
 
-    if (dist <= CastleDefenseGame._stickDeadzone) return;
+    // 리더 = 첫 번째 유닛
+    final leader = characterUnits.first;
 
-    // 정규화된 방향으로 150px/s 이동
-    unit.pos.x += (dx / dist) * _buffedMoveSpeed * dt; // 리디자인 B-2-11: 이동속도 바프 적용
-    unit.pos.y += (dy / dist) * _buffedMoveSpeed * dt;
+    // 스틱 입력 계산
+    if (_stickActive) {
+      final dx = _stickKnobPos.x - _stickBasePos.x;
+      final dy = _stickKnobPos.y - _stickBasePos.y;
+      final dist = sqrt(dx * dx + dy * dy);
 
-    // 화면 내 클램프
-    unit.pos.x = unit.pos.x.clamp(characterUnitRadius, size.x - characterUnitRadius);
-    unit.pos.y = unit.pos.y.clamp(characterUnitRadius, size.y - characterUnitRadius);
+      if (dist > CastleDefenseGame._stickDeadzone) {
+        leader.pos.x += (dx / dist) * _buffedMoveSpeed * dt;
+        leader.pos.y += (dy / dist) * _buffedMoveSpeed * dt;
+      }
+    }
+
+    // 리더 위치를 포메이션 여유분 포함하여 클램프 (끝에서 겹침 방지)
+    const double margin = 25.0; // 포메이션 오프셋(20) + 여유(5)
+    leader.pos.x = leader.pos.x.clamp(margin, size.x - margin);
+    leader.pos.y = leader.pos.y.clamp(margin, size.y - margin);
+
+    // 나머지 유닛을 리더 기준 오프셋으로 배치
+    for (int i = 0; i < characterUnits.length; i++) {
+      if (i == 0) continue; // 리더는 이미 이동 완료
+      if (i - 1 < _formationOffsets.length) {
+        // 오프셋이 리더 기준이 아닌 각 슬롯 고유 오프셋
+        final offset = _formationOffsets[i];
+        characterUnits[i].pos.x = leader.pos.x + offset[0] - _formationOffsets[0][0];
+        characterUnits[i].pos.y = leader.pos.y + offset[1] - _formationOffsets[0][1];
+      } else {
+        characterUnits[i].pos.setFrom(leader.pos);
+      }
+    }
   }
 
   // 가장 가까운 몬스터 찾기 (메인 캐릭터용)
