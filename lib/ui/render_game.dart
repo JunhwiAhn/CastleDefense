@@ -661,12 +661,7 @@ extension GameRendering on CastleDefenseGame {
 
   // ClassType → 이미지 파일명 매핑
   Image? _getCharacterImage(_CharacterUnit unit) {
-    // 메인 캐릭터 (슬롯 0)
-    if (!unit.isTower) {
-      final mainImg = characterImages['main_character'];
-      if (mainImg != null) return mainImg;
-    }
-    // ClassType에 대응하는 이미지 키 매핑
+    // ClassType에 대응하는 이미지 키 매핑 (클래스별 고유 스프라이트 우선)
     final classToImageKey = <ClassType, String>{
       ClassType.warrior: 'warrior',
       ClassType.crusader: 'guardian',    // crusader → guardian.png
@@ -689,7 +684,8 @@ extension GameRendering on CastleDefenseGame {
     if (key != null && characterImages.containsKey(key)) {
       return characterImages[key];
     }
-    return null;
+    // 클래스별 이미지 없으면 main_character 폴백
+    return characterImages['main_character'];
   }
 
   // D-4-3: 보스/미니보스 발광 오라 렌더링
