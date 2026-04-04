@@ -1,119 +1,176 @@
-// 스테이지/라운드 로딩 및 전환
+// 스테이지/웨이브 로딩 및 전환 (TD 방식)
 part of '../castle_defense_game.dart';
 
 extension StageSystem on CastleDefenseGame {
-  // -----------------------------
-  // 스테이지 로딩 / 시작 / 전환
-  // -----------------------------
-  void _loadStage(int level) {
-    final cfg = kStageConfigs[level] ?? kStageConfigs[1]!;
 
-    stageLevel = cfg.stageLevel;
-    currentRound = 1; // 첫 번째 라운드부터 시작
-    totalRoundsInStage = cfg.rounds.length;
+  // ─── 스테이지 초기화 ───────────────────────────
+  void _loadStage(int level) {
+    stageLevel = level;
+    currentWave = 0;
+    totalWavesInStage = kStageConfigs[level]?.waves.length ?? 10;
 
     castleHp = castleMaxHp;
+    castleFlashTimer = 0.0;
+    _perfectClearSoFar = true; // 무피해 클리어 추적 초기화
+
     monsters.clear();
-    // 리디자인 B-2-10: 인게임 XP 초기화
-    playerXp = 0;
-    playerCharLevel = 1;
-    // 속성 시스템: 스테이지 시작 시 속성 리셋 (바프로 재부여)
-    _mainCharElement = ElementType.none;
-    _elementMasteryCount = 0;
-    // 증강 시스템: 스테이지 시작 시 비전설 증강 리셋, 전설은 carryOver 유지
-    activeAugments = activeAugments.where((a) => a.carryOverToNextStage).toList();
-    _acquiredAugmentIds.clear();
-    for (final a in activeAugments) { _acquiredAugmentIds.add(a.id); }
-    _augmentOptions = [];
-    _augmentL01Used = false;
-    _augmentL03Used = false;
-    _augmentR12Used = false;
-    _augmentR04Stacks = 0;
-    _augmentR04Timer = 0.0;
-    _augmentL02Active = false;
-    _augmentL02Timer = 0.0;
-    _augmentL03BarrierActive = false;
-    _augmentL03BarrierTimer = 0.0;
-    _buffSelectionCount.clear();
-
-    _loadRound(1); // 첫 번째 라운드 로딩
-  }
-
-  void _loadRound(int roundNumber) {
-    final cfg = kStageConfigs[stageLevel];
-    if (cfg == null || roundNumber < 1 || roundNumber > cfg.rounds.length) {
-      return;
-    }
-
-    final roundCfg = cfg.rounds[roundNumber - 1];
-    currentRound = roundNumber;
-    totalMonstersInRound = roundCfg.totalMonsters;
-    monsterMaxHp = roundCfg.monsterMaxHp;
-
-    spawnedMonsters = 0;
-    defeatedMonsters = 0;
-    escapedMonsters = 0;
-    spawnTimer = 0.0;
-    bossSpawned = false;
-    miniBossesSpawned = 0; // 리디자인 B-2-17
-
-    // D-1-6: 라운드 시작 시 XP/골드 추적 초기화
-    _roundXpGained = 0;
-    _roundGoldGained = 0;
-
-    // 라운드 타입에 따라 시간 제한 설정
-    roundTimer = 0.0;
-    if (roundCfg.monsterType == MonsterType.boss) {
-      roundTimeLimit = 300.0; // 보스: 5분
-    } else if (roundCfg.monsterType == MonsterType.miniBoss) {
-      roundTimeLimit = 180.0; // 미니보스: 3분
-    } else {
-      roundTimeLimit = 120.0; // 일반: 2분
-    }
-
-    // 라운드 시작 시 맵 요소 전체 클리어 (이전 라운드 잔여물 제거)
-    monsters.clear();
-    goldDrops.clear();
-    xpGems.clear();
     projectiles.clear();
     vfxEffects.clear();
-    _damageNumbers.clear();
+    damageNumbers.clear();
 
-    // 라운드 시작 시 증강 리셋 (라운드 중에만 유효)
-    activeAugments.clear();
-    _acquiredAugmentIds.clear();
-    _augmentOptions = [];
-    _augmentL01Used = false;
-    _augmentL03Used = false;
-    _augmentR12Used = false;
-    _augmentR04Stacks = 0;
-    _augmentR04Timer = 0.0;
-    _augmentL02Active = false;
-    _augmentL02Timer = 0.0;
-    _augmentL03BarrierActive = false;
-    _augmentL03BarrierTimer = 0.0;
-    _buffSelectionCount.clear();
-
-    // 메인 캐릭터 상태 초기화
-    _mainCharAlive = true;
-    _mainCharRespawning = false;
-    _mainCharHp = _mainCharMaxHp;
-    _respawnTimer = 0.0;
-    _invincibleTimer = 0.0;
+    // 타워는 유지 (준비 단계에서 배치한 것 보존)
+    // 인게임 골드 리셋
+    playerInGameGold = 150 + (level - 1) * 50;
   }
 
-  void _goToRoundSelect() {
+  // ─── 웨이브 로딩 ──────────────────────────────
+  void _loadWave(int waveNumber) {
+    final cfg = kStageConfigs[stageLevel];
+    if (cfg == null || waveNumber < 1 || waveNumber > cfg.waves.length) return;
+
+    final waveCfg = cfg.waves[waveNumber - 1];
+    currentWave = waveNumber;
+    totalMonstersInWave = waveCfg.totalMonsters;
+    spawnedCount = 0;
+    defeatedCount = 0;
+    escapedCount = 0;
+    spawnTimer = 0.0;
+    _currentSpawnList = _expandSpawnList(waveCfg.spawnList);
+    _spawnListIndex = 0;
+
+    // 웨이브 시작 골드 보너스
+    playerInGameGold += waveCfg.waveGoldBonus;
+
     monsters.clear();
-    gameState = GameState.roundSelect;
+    projectiles.clear();
+    damageNumbers.clear();
   }
 
-  void _startNextRound() {
-    if (currentRound < totalRoundsInStage) {
-      _loadRound(currentRound + 1);
-      gameState = GameState.playing;
+  // spawnList → 개별 EnemyType 목록으로 확장 (섞지 않고 순서 유지)
+  List<EnemyType> _expandSpawnList(List<_SpawnEntry> entries) {
+    final result = <EnemyType>[];
+    for (final e in entries) {
+      for (int i = 0; i < e.count; i++) result.add(e.type);
+    }
+    return result;
+  }
+
+  // ─── 웨이브 시작 (prep → waving) ───────────────
+  void _startWave() {
+    if (gameState != GameState.prep) return;
+    _loadWave(currentWave + 1);
+    gameState = GameState.waving;
+  }
+
+  // ─── 다음 웨이브로 진행 ────────────────────────
+  void _startNextWave() {
+    if (currentWave < totalWavesInStage) {
+      gameState = GameState.prep;
+      // 웨이브 클리어 후 이자 지급 (보유 골드의 3%, 최대 +15g)
+      final interest = (playerInGameGold * 0.03).floor().clamp(0, 15);
+      playerInGameGold += interest;
     } else {
-      // 모든 라운드 클리어 (스테이지 클리어)
       _onStageClear();
     }
+  }
+
+  // ─── 웨이브 클리어 ────────────────────────────
+  void _onWaveClear() {
+    if (gameState != GameState.waving) return;
+
+    // 별조각 보상
+    final cfg = kStageConfigs[stageLevel];
+    if (cfg != null && currentWave <= cfg.waves.length) {
+      final waveCfg = cfg.waves[currentWave - 1];
+      playerStarShards += waveCfg.starShardReward;
+    }
+
+    gameState = GameState.waveCleared;
+    _waveClearTimer = 0.0;
+  }
+
+  // ─── 스테이지 클리어 ──────────────────────────
+  void _onStageClear() {
+    final cfg = kStageConfigs[stageLevel];
+    if (cfg == null) return;
+
+    // 별조각 + 젬 지급
+    playerStarShards += cfg.starShardOnStageClear;
+    playerGem += cfg.gemOnStageClear;
+
+    // 무피해 클리어 보너스
+    if (_perfectClearSoFar) {
+      playerStarShards += 5;
+      playerGem += 3;
+    }
+
+    // 첫 클리어 보너스
+    if (!_clearedStages.contains(stageLevel)) {
+      _clearedStages.add(stageLevel);
+      playerStarShards += 10;
+      playerGem += cfg.gemOnFirstClear;
+    }
+
+    // 다음 스테이지 언락
+    if (stageLevel >= unlockedStageMax) {
+      unlockedStageMax = stageLevel + 1;
+    }
+
+    gameState = GameState.stageClear;
+  }
+
+  // ─── 게임오버 ─────────────────────────────────
+  void _onGameOver() {
+    if (gameState != GameState.waving) return;
+    gameState = GameState.gameOver;
+  }
+
+  // ─── 웨이브 클리어 인터벌 업데이트 ─────────────
+  void _updateWaveCleared(double dt) {
+    _waveClearTimer += dt;
+    if (_waveClearTimer >= CastleDefenseGame._waveClearDuration) {
+      _waveClearTimer = 0.0;
+      _startNextWave();
+    }
+  }
+
+  // ─── 몬스터 스폰 업데이트 ─────────────────────
+  void _updateSpawn(double dt) {
+    if (spawnedCount >= totalMonstersInWave) return;
+    if (_spawnListIndex >= _currentSpawnList.length) return;
+
+    final cfg = kStageConfigs[stageLevel];
+    if (cfg == null || currentWave < 1 || currentWave > cfg.waves.length) return;
+    final waveCfg = cfg.waves[currentWave - 1];
+
+    spawnTimer += dt;
+    if (spawnTimer >= waveCfg.spawnInterval) {
+      spawnTimer = 0.0;
+      _spawnMonster(_currentSpawnList[_spawnListIndex]);
+      _spawnListIndex++;
+      spawnedCount++;
+    }
+  }
+
+  // ─── 몬스터 1마리 생성 ────────────────────────
+  void _spawnMonster(EnemyType type) {
+    final hp = _enemyHp(currentWave + (stageLevel - 1) * 10, type);
+    monsters.add(_Monster(
+      pos: Vector2(kPathWaypointDefs[0].$1, kPathWaypointDefs[0].$2),
+      hp: hp,
+      maxHp: hp,
+      enemyType: type,
+      speed: _enemySpeed(type),
+      castleDamage: _enemyCastleDamage(type),
+      goldReward: _enemyGold(type),
+      waypointIndex: 0,
+    ));
+  }
+
+  // ─── 종족 선택 ────────────────────────────────
+  void _selectRace(RaceType race) {
+    playerRace = race;
+    raceSelected = true;
+    gameState = GameState.home;
   }
 }

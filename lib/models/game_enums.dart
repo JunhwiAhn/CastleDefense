@@ -1,58 +1,62 @@
 // 게임 상태 및 타입 enum 모음
 part of '../castle_defense_game.dart';
 
+// 게임 전체 상태 머신
 enum GameState {
-  loading, // 로딩(0.5초 게이지)
-  roundSelect, // 라운드 선택 (맵 스타일)
-  playing, // 실제 전투
-  paused, // 일시정지
-  levelUp, // 리디자인 B-2-11: 레벨업 바프 카드 선택 (게임 일시정지)
-  roundClear, // 라운드 클리어 (잠깐 멈춤)
-  augmentSelect, // 증강 선택 (라운드 2/4/5 클리어 후)
-  shopOpen, // 리디자인 B-2-16: 스테이지 클리어 후 상점 화면
-  result, // 결과 화면 (클리어 or 실패)
+  loading,      // 초기 로딩
+  raceSelect,   // 최초 1회: 종족 선택
+  home,         // 홈화면 (가챠·컬렉션·설정)
+  prep,         // 웨이브 전 타워 배치 단계
+  waving,       // 웨이브 진행 중
+  waveCleared,  // 웨이브 클리어 인터벌 (2초)
+  stageClear,   // 스테이지 전 라운드 클리어
+  gameOver,     // 성 HP = 0
 }
 
-// 리디자인 B-2-16: 상점 아이템 종류
-enum ShopItemType {
-  castleFullRepair,  // 성 HP 완전 회복 (무료, 스테이지 클리어 시 자동)
-  castleMaxHpUp,    // 성 최대 HP +20 (50G, 최대 10회)
-  towerPowerUp,     // 전체 타워 공격력 +5% (30G, 최대 10회)
-  mainCharHpUp,     // 메인 캐릭터 최대 HP +10 (20G, 최대 5회)
+// 종족 (최초 1회 선택, 이후 고정)
+enum RaceType {
+  human,   // 인간족: 골드 수입+15%, 타워 비용-5%
+  orc,     // 오크족: 타워 공격력+20%, 사거리-10%, 대포/근접 업그레이드-20%
+  elf,     // 엘프족: 타워 사거리+20%, 공격속도+10%, 저격/궁수 업그레이드-20%
+  machina, // 기계족: 업그레이드 비용-25%, Lv3 타워 소형 AOE 추가
+  demon,   // 악마족: 처치시 5% 확률 성HP+1, 디버프 지속+30%, 마법 타워 추가 골드
 }
 
-// 리디자인 B-2-11: 바프 타입 (P-2-1 기준 8종)
-enum BuffType {
-  attackUp,    // 공격력 +15% (최대 5회)
-  attackSpdUp, // 공격 간격 -10% (최대 5회)
-  moveSpeedUp, // 이동속도 +20% (최대 3회)
-  rangeUp,     // 사거리 +15% (최대 3회)
-  castleRepair, // 성 HP +20 (무제한)
-  towerPowerUp, // 전체 타워 공격력 +10% (최대 5회)
-  xpMagnetUp,  // 젬 회수 반경 +15px (최대 3회)
-  castleBarrier, // 10초 성 무적 (무제한)
-  // 속성 시스템: 속성 부여 바프 (최대 1회, 상덮어쓰기)
-  elementFireGrant,     // 화염 속성 부여
-  elementWaterGrant,    // 수빙 속성 부여
-  elementEarthGrant,    // 대지 속성 부여
-  elementElectricGrant, // 번개 속성 부여
-  elementDarkGrant,     // 암흑 속성 부여
-  elementMastery,       // 속성 데미지 보너스 +10% (최대 3회)
+// 타워 타입 4종
+enum TowerType {
+  archer,  // 궁수: 단일·빠른 연사
+  cannon,  // 대포: 범위 데미지
+  mage,    // 마법사: 명중 시 슬로우
+  sniper,  // 저격: 단일·고데미지·긴 사거리
 }
 
+// 적 타입
+enum EnemyType {
+  normal,   // 기본
+  fast,     // 빠름 (R3~)
+  tank,     // 느리고 단단 (R4~)
+  miniBoss, // 미니보스
+  boss,     // 보스
+}
+
+// 타워 타겟 우선순위
+enum TargetPriority {
+  first,     // 경로 진행도 높은 순 (기본)
+  strongest, // 현재 HP 높은 순
+  weakest,   // 현재 HP 낮은 순
+  closest,   // 타워 거리 가까운 순
+}
+
+// 카드 등급 (가챠 결과)
+enum CardGrade { c, b, a, s }
+
+// 홈화면 하단 메뉴
 enum BottomMenu {
-  shop, // 상점
-  inventory, // 인벤토리
-  home, // 홈 (라운드 선택)
-  gacha, // 뽑기
-  settings, // 설정
+  home,       // 홈 (스테이지 선택)
+  collection, // 컬렉션 (카드 업그레이드)
+  gacha,      // 뽑기
+  settings,   // 설정
 }
 
-enum MonsterType {
-  normal, // 일반 몬스터
-  miniBoss, // 부보스 (라운드 5)
-  boss, // 보스 (라운드 10)
-}
-
-// VFX 이펙트 종류
-enum VfxType { hit, death, shockwave, barrier }
+// VFX 이펙트 종류 (일부 유지)
+enum VfxType { hit, death, shockwave }
