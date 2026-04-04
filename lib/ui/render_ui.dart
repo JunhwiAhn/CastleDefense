@@ -14,8 +14,9 @@ extension UIRendering on CastleDefenseGame {
     if (img != null) {
       final src = Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble());
       final dst = Rect.fromCenter(center: center, width: iconSize, height: iconSize);
-      canvas.drawImageRect(img, src, dst,
-          Paint()..color = Color.fromRGBO(255, 255, 255, alpha));
+      // alpha가 1.0이면 캐시된 Paint 사용
+      final p = alpha == 1.0 ? _paintDefault : (Paint()..color = Color.fromRGBO(255, 255, 255, alpha));
+      canvas.drawImageRect(img, src, dst, p);
     } else if (fallbackEmoji.isNotEmpty) {
       _drawCenteredText(canvas, fallbackEmoji, center, fontSize: iconSize * 0.7);
     }
@@ -42,6 +43,7 @@ extension UIRendering on CastleDefenseGame {
       textDirection: TextDirection.ltr,
     )..layout();
     tp.paint(canvas, center - Offset(tp.width / 2, tp.height / 2));
+    tp.dispose(); // #79: 매 프레임 생성되는 TextPainter 메모리 누수 방지
   }
 
   // ─── HUD (상단 50px) ──────────────────────────
@@ -83,9 +85,9 @@ extension UIRendering on CastleDefenseGame {
         fontSize: 12, color: speedColor);
   }
 
-  // ─── 하단 타워 선택 바 ────────────────────────
-  void _renderTowerBar(Canvas canvas) {
-    const double barH = 100.0;
+  // ─── 하단 바 (골드 + 웨이브 시작) ──────────────
+  void _renderBottomBar(Canvas canvas) {
+    const double barH = 55.0;
     final barY = size.y - barH;
 
     // 배경
@@ -95,74 +97,19 @@ extension UIRendering on CastleDefenseGame {
     canvas.drawLine(Offset(0, barY), Offset(size.x, barY),
         Paint()..color = const Color(0xFF336633)..strokeWidth = 1);
 
-    // 타워 버튼 4개
-    const types = TowerType.values;
-    final btnW = (size.x - 10) / types.length;
+    // 골드 표시
+    _drawCenteredText(canvas, '🪙 $playerInGameGold',
+        Offset(80, barY + barH / 2),
+        fontSize: 16, color: const Color(0xFFFFD700),
+        fontWeight: FontWeight.bold);
 
-    for (int i = 0; i < types.length; i++) {
-      final type = types[i];
-      final stat = kTowerBaseStat[type]!;
-      int cost = stat.cost;
-      if (playerRace == RaceType.human) cost = (cost * 0.95).round();
-
-      final isSelected = placingTowerType == type;
-      final canAfford = playerInGameGold >= cost;
-
-      final btnX = 5.0 + i * btnW;
-      final btnRect = Rect.fromLTWH(btnX, barY + 5, btnW - 5, barH - 10);
-
-      // 버튼 배경
-      final btnColor = isSelected
-          ? const Color(0xFF226622)
-          : canAfford
-              ? const Color(0xFF112211)
-              : const Color(0xFF1A1A1A);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(btnRect, const Radius.circular(8)),
-        Paint()..color = btnColor);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(btnRect, const Radius.circular(8)),
-        Paint()
-          ..color = isSelected
-              ? const Color(0xFF44FF44)
-              : canAfford
-                  ? const Color(0xFF336633)
-                  : const Color(0xFF333333)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5);
-
-      // 아이콘
-      final icon = switch (type) {
-        TowerType.archer => '🏹',
-        TowerType.cannon => '💣',
-        TowerType.mage   => '🔮',
-        TowerType.sniper => '🎯',
-      };
-      _drawCenteredText(canvas, icon,
-          Offset(btnRect.center.dx, btnRect.top + 22), fontSize: 22);
-
-      // 타입 이름
-      final name = switch (type) {
-        TowerType.archer => '궁수',
-        TowerType.cannon => '대포',
-        TowerType.mage   => '마법사',
-        TowerType.sniper => '저격',
-      };
-      _drawCenteredText(canvas, name,
-          Offset(btnRect.center.dx, btnRect.top + 52),
-          fontSize: 11, color: canAfford
-              ? const Color(0xFFCCFFCC)
-              : const Color(0xFF666666));
-
-      // 비용
-      _drawCenteredText(canvas, '${cost}g',
-          Offset(btnRect.center.dx, btnRect.top + 68),
-          fontSize: 12,
-          color: canAfford
-              ? const Color(0xFFFFD700)
-              : const Color(0xFF888844),
-          fontWeight: FontWeight.bold);
-    }
+    // 2배속 버튼
+    final speedColor = speedMultiplier > 1.0
+        ? const Color(0xFFFFDD00)
+        : const Color(0xFF888888);
+    _drawCenteredText(canvas, speedMultiplier > 1.0 ? '⏩ 2x' : '▶ 1x',
+        Offset(size.x / 2, barY + barH / 2),
+        fontSize: 14, color: speedColor);
 
     // 웨이브 시작 버튼 (prep 상태일 때만)
     if (gameState == GameState.prep) {
@@ -171,7 +118,7 @@ extension UIRendering on CastleDefenseGame {
   }
 
   Rect _waveStartButtonRect() {
-    return Rect.fromLTWH(size.x - 90, size.y - 95, 85, 40);
+    return Rect.fromLTWH(size.x - 110, size.y - 48, 100, 38);
   }
 
   void _renderWaveStartButton(Canvas canvas) {
@@ -271,6 +218,43 @@ extension UIRendering on CastleDefenseGame {
         ..strokeWidth = 1);
     _drawCenteredText(canvas, '철거 (+${tower.sellValue}g)',
         sellRect.center, fontSize: 11, color: const Color(0xFFFF8888));
+  }
+
+  // ─── 웨이브 시작 카운트다운 (3, 2, 1, GO!) ────
+  void _renderWaveCountdown(Canvas canvas) {
+    // 반투명 오버레이
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.x, size.y),
+      Paint()..color = const Color(0x66000000));
+
+    // 카운트다운 텍스트 결정
+    final String text;
+    final Color color;
+    if (_waveCountdownTimer > 2.0) {
+      text = '3';
+      color = const Color(0xFF44FF44);
+    } else if (_waveCountdownTimer > 1.0) {
+      text = '2';
+      color = const Color(0xFFFFDD44);
+    } else if (_waveCountdownTimer > 0.0) {
+      text = '1';
+      color = const Color(0xFFFF6644);
+    } else {
+      text = 'GO!';
+      color = const Color(0xFFFF4444);
+    }
+
+    // 스케일 애니메이션 (프레임 시작 시 크게 → 작아짐)
+    final fraction = _waveCountdownTimer > 0
+        ? (_waveCountdownTimer % 1.0)
+        : (-_waveCountdownTimer / 0.5).clamp(0.0, 1.0);
+    final scale = 1.0 + fraction * 0.3;
+    final fontSize = 56.0 * scale;
+
+    _drawCenteredText(canvas, text,
+        Offset(size.x / 2, size.y * 0.4),
+        fontSize: fontSize, color: color,
+        fontWeight: FontWeight.bold);
   }
 
   // ─── 웨이브 클리어 배너 ───────────────────────
@@ -447,84 +431,43 @@ extension UIRendering on CastleDefenseGame {
     }
   }
 
-  // ─── 가챠 화면 ───────────────────────────────
+  // ─── 가챠 화면 (추후 재구현, 현재는 캐릭터 목록) ──
   void _renderGachaScreen(Canvas canvas) {
-    // 헤더
-    _drawCenteredText(canvas, '캐릭터 뽑기',
+    _drawCenteredText(canvas, '캐릭터 목록',
         Offset(size.x / 2, 120), fontSize: 20,
         color: const Color(0xFFFFD700), fontWeight: FontWeight.bold);
-    _drawCenteredText(canvas, '보유 💎 $playerGem',
+    _drawCenteredText(canvas, '가챠 시스템 준비 중...',
         Offset(size.x / 2, 150), fontSize: 14,
         color: const Color(0xFF88AAFF));
 
-    // 뽑기 결과 표시 중
-    if (gachaResults != null && gachaResults!.isNotEmpty) {
-      _renderGachaResult(canvas);
-      return;
-    }
-
-    // 단일 뽑기 버튼
-    _drawButton(canvas, '단일 뽑기 (💎${gachaSystem.getSingleSummonCost()})',
-        _gachaSingleButtonRect(), const Color(0xFF223366), const Color(0xFF4488FF));
-
-    // 10연 뽑기 버튼
-    _drawButton(canvas, '10연 뽑기 (💎${gachaSystem.getTenSummonCost()})',
-        _gachaTenButtonRect(), const Color(0xFF332244), const Color(0xFF8844FF));
-
-    // 보유 캐릭터 목록
-    _renderOwnedCharacterList(canvas);
+    // 전체 캐릭터 표시
+    _renderCharacterGrid(canvas);
   }
 
-  void _renderGachaResult(Canvas canvas) {
-    if (gachaResults == null) return;
-    final idx = gachaResultIndex.clamp(0, gachaResults!.length - 1);
-    final def = gachaResults![idx];
-
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y),
-        Paint()..color = const Color(0xCC000000));
-
-    final rankColor = Color(def.rank.color);
-    _drawCenteredText(canvas, def.rank.displayName,
-        Offset(size.x / 2, size.y * 0.3),
-        fontSize: 36, color: rankColor, fontWeight: FontWeight.bold);
-    _drawCenteredText(canvas, def.name,
-        Offset(size.x / 2, size.y * 0.5),
-        fontSize: 22, color: const Color(0xFFFFFFFF));
-    _drawCenteredText(canvas, def.description,
-        Offset(size.x / 2, size.y * 0.6),
-        fontSize: 12, color: const Color(0xFFAAAAAA));
-
-    final remaining = gachaResults!.length - idx - 1;
-    _drawCenteredText(canvas,
-        remaining > 0 ? '탭하여 다음 ($remaining 남음)' : '탭하여 완료',
-        Offset(size.x / 2, size.y * 0.75),
-        fontSize: 14, color: const Color(0xFF888888));
-  }
-
-  void _renderOwnedCharacterList(Canvas canvas) {
-    const double startY = 310.0;
-    const double cardW = 56.0, cardH = 72.0, gap = 8.0;
-    const int cols = 5;
+  void _renderCharacterGrid(Canvas canvas) {
+    const double startY = 180.0;
+    const double cardW = 72.0, cardH = 86.0, gap = 8.0;
+    const int cols = 4;
     final startX = (size.x - (cardW * cols + gap * (cols - 1))) / 2;
+    final allChars = CharacterDefinitions.all;
 
-    // 중복 제거 목록
-    final seen = <String>{};
-    final unique = <OwnedCharacter>[];
-    for (final c in ownedCharacters) {
-      if (seen.add(c.characterId)) unique.add(c);
-    }
-
-    for (int i = 0; i < unique.length; i++) {
-      final c = unique[i];
-      final def = CharacterDefinitions.byId(c.characterId);
+    for (int i = 0; i < allChars.length; i++) {
+      final def = allChars[i];
       final row = i ~/ cols;
       final col = i % cols;
       final x = startX + col * (cardW + gap);
       final y = startY + row * (cardH + gap) - characterListScrollOffset;
 
-      if (y + cardH < 200 || y > size.y - 70) continue;
+      if (y + cardH < 130 || y > size.y - 70) continue;
 
-      final rankColor = Color(def.rank.color);
+      // 타워 타입별 색상
+      final typeColor = switch (def.towerType) {
+        TowerTypeMapping.archer => const Color(0xFF44BB44),
+        TowerTypeMapping.cannon => const Color(0xFFBB4444),
+        TowerTypeMapping.mage   => const Color(0xFF4444BB),
+        TowerTypeMapping.sniper => const Color(0xFFBBBB44),
+      };
+
       canvas.drawRRect(
         RRect.fromRectAndRadius(
             Rect.fromLTWH(x, y, cardW, cardH), const Radius.circular(6)),
@@ -533,96 +476,34 @@ extension UIRendering on CastleDefenseGame {
         RRect.fromRectAndRadius(
             Rect.fromLTWH(x, y, cardW, cardH), const Radius.circular(6)),
         Paint()
-          ..color = rankColor.withAlpha(180)
+          ..color = typeColor.withAlpha(180)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.2);
 
-      _drawCenteredText(canvas, def.name.length > 4 ? def.name.substring(0, 4) : def.name,
-          Offset(x + cardW / 2, y + cardH / 2 - 8),
-          fontSize: 10, color: const Color(0xFFFFFFFF));
-      _drawCenteredText(canvas, 'Lv${c.cardLevel}',
-          Offset(x + cardW / 2, y + cardH / 2 + 8),
-          fontSize: 10, color: const Color(0xFFFFD700));
-      _drawCenteredText(canvas, def.rank.displayName,
-          Offset(x + cardW - 8, y + 10),
-          fontSize: 9, color: rankColor, fontWeight: FontWeight.bold);
+      // 첫 프레임 표시
+      final img = characterImages[def.id];
+      if (img != null) {
+        final frameW = img.width / def.frameColumns;
+        final frameH = img.height / def.frameRows;
+        final src = Rect.fromLTWH(0, 0, frameW, frameH);
+        final dst = Rect.fromLTWH(x + 6, y + 4, cardW - 12, cardH - 28);
+        canvas.drawImageRect(img, src, dst, _paintDefault);
+      }
+
+      _drawCenteredText(canvas,
+          def.name.length > 5 ? def.name.substring(0, 5) : def.name,
+          Offset(x + cardW / 2, y + cardH - 10),
+          fontSize: 9, color: const Color(0xFFFFFFFF));
     }
   }
 
-  // ─── 컬렉션 화면 (카드 업그레이드) ─────────────
+  // ─── 컬렉션 화면 (캐릭터 도감) ─────────────────
   void _renderCollectionScreen(Canvas canvas) {
     _drawCenteredText(canvas, '컬렉션',
         Offset(size.x / 2, 120), fontSize: 20,
         color: const Color(0xFFFFD700), fontWeight: FontWeight.bold);
-    _drawCenteredText(canvas, '⭐ $playerStarShards',
-        Offset(size.x / 2, 150), fontSize: 14,
-        color: const Color(0xFFFFEE44));
 
-    // 카드 목록 (업그레이드 버튼 포함)
-    const double cardW = 340.0, cardH = 70.0, gap = 8.0;
-    final startX = (size.x - cardW) / 2;
-    const double startY = 175.0;
-
-    final seen = <String>{};
-    final unique = <OwnedCharacter>[];
-    for (final c in ownedCharacters) {
-      if (seen.add(c.characterId)) unique.add(c);
-    }
-
-    for (int i = 0; i < unique.length; i++) {
-      final c = unique[i];
-      final def = CharacterDefinitions.byId(c.characterId);
-      final y = startY + i * (cardH + gap) - characterListScrollOffset;
-      if (y + cardH < 130 || y > size.y - 70) continue;
-
-      final cardRect = Rect.fromLTWH(startX, y, cardW, cardH);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(cardRect, const Radius.circular(8)),
-        Paint()..color = const Color(0xFF112211));
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(cardRect, const Radius.circular(8)),
-        Paint()
-          ..color = const Color(0xFF336633)
-          ..style = PaintingStyle.stroke..strokeWidth = 1);
-
-      _drawCenteredText(canvas, def.name,
-          Offset(startX + 60, y + 20),
-          fontSize: 13, fontWeight: FontWeight.bold);
-      _drawCenteredText(canvas,
-          'Lv ${c.cardLevel}/5  중복: ${c.duplicateCount}',
-          Offset(startX + 60, y + 42), fontSize: 11,
-          color: const Color(0xFF88AA88));
-
-      // 업그레이드 버튼
-      if (c.cardLevel < 5) {
-        final needShards = OwnedCharacter.kStarShardsRequired[c.cardLevel];
-        final needDupes  = OwnedCharacter.kDuplicatesRequired[c.cardLevel];
-        final canUpgrade = playerStarShards >= needShards
-            && c.duplicateCount >= needDupes;
-
-        final upgRect = Rect.fromLTWH(
-            startX + cardW - 100, y + 15, 90, 40);
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(upgRect, const Radius.circular(6)),
-          Paint()..color = canUpgrade
-              ? const Color(0xFF225522) : const Color(0xFF222222));
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(upgRect, const Radius.circular(6)),
-          Paint()
-            ..color = canUpgrade
-                ? const Color(0xFF44FF44) : const Color(0xFF444444)
-            ..style = PaintingStyle.stroke..strokeWidth = 1);
-        _drawCenteredText(canvas,
-            '강화\n⭐$needShards+${needDupes}장',
-            upgRect.center, fontSize: 10,
-            color: canUpgrade
-                ? const Color(0xFF44FF44) : const Color(0xFF666666));
-      } else {
-        _drawCenteredText(canvas, 'MAX',
-            Offset(startX + cardW - 55, y + 35),
-            fontSize: 12, color: const Color(0xFFFFD700));
-      }
-    }
+    _renderCharacterGrid(canvas);
   }
 
   // ─── 버튼 헬퍼 ───────────────────────────────
@@ -660,63 +541,129 @@ extension UIRendering on CastleDefenseGame {
   void _renderTowerPlacementPopup(Canvas canvas) {
     if (_pendingSlotId < 0) return;
 
-    const double popW = 320.0, popH = 260.0;
+    final chars = CharacterDefinitions.all;
+    final contentH = 60.0 + chars.length * 50.0 + 50.0;
+    final popH = contentH.clamp(0.0, size.y - 80);
+    const double popW = 340.0;
     final popX = (size.x - popW) / 2;
-    final popY = (size.y - popH) / 2 - 50;
+    final popY = ((size.y - popH) / 2).clamp(30.0, size.y - popH - 10);
     final popRect = Rect.fromLTWH(popX, popY, popW, popH);
+
+    // 반투명 배경 오버레이
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y),
+        Paint()..color = const Color(0x88000000));
 
     canvas.drawRRect(
       RRect.fromRectAndRadius(popRect, const Radius.circular(12)),
-      Paint()..color = const Color(0xEE0D1F0D));
+      Paint()..color = const Color(0xF00D1F0D));
     canvas.drawRRect(
       RRect.fromRectAndRadius(popRect, const Radius.circular(12)),
       Paint()
         ..color = const Color(0xFF44AA44)
-        ..style = PaintingStyle.stroke..strokeWidth = 1.5);
+        ..style = PaintingStyle.stroke..strokeWidth = 2);
 
-    _drawCenteredText(canvas, '타워 선택',
-        Offset(popX + popW / 2, popY + 20),
-        fontSize: 16, fontWeight: FontWeight.bold);
+    _drawCenteredText(canvas, '캐릭터 배치',
+        Offset(popX + popW / 2, popY + 22),
+        fontSize: 16, fontWeight: FontWeight.bold,
+        color: const Color(0xFFFFFFFF));
 
-    // 캐릭터 선택 목록 (타워 타입별)
-    if (_pendingTowerType != null) {
-      final chars = getCharactersForTowerType(_pendingTowerType!);
-      _drawCenteredText(canvas, '배치할 캐릭터:',
-          Offset(popX + popW / 2, popY + 50),
-          fontSize: 12, color: const Color(0xFF88CC88));
+    // 골드 표시
+    _drawCenteredText(canvas, '🪙 $playerInGameGold',
+        Offset(popX + popW - 50, popY + 22),
+        fontSize: 12, color: const Color(0xFFFFD700));
 
-      // 기본 (캐릭터 없음) 옵션
-      final defaultRect = Rect.fromLTWH(popX + 10, popY + 65, popW - 20, 32);
+    for (int i = 0; i < chars.length; i++) {
+      final def = chars[i];
+      final towerType = switch (def.towerType) {
+        TowerTypeMapping.archer => TowerType.archer,
+        TowerTypeMapping.cannon => TowerType.cannon,
+        TowerTypeMapping.mage   => TowerType.mage,
+        TowerTypeMapping.sniper => TowerType.sniper,
+      };
+      final stat = kTowerBaseStat[towerType]!;
+      int cost = stat.cost;
+      if (playerRace == RaceType.human) cost = (cost * 0.95).round();
+      final canAfford = playerInGameGold >= cost;
+
+      final r = Rect.fromLTWH(popX + 10, popY + 54 + i * 50.0, popW - 20, 44);
+
+      // 타워 타입별 배경 색상
+      final typeColor = switch (def.towerType) {
+        TowerTypeMapping.archer => const Color(0xFF1A2A1A),
+        TowerTypeMapping.cannon => const Color(0xFF2A1A1A),
+        TowerTypeMapping.mage   => const Color(0xFF1A1A2A),
+        TowerTypeMapping.sniper => const Color(0xFF2A2A1A),
+      };
+      final borderColor = switch (def.towerType) {
+        TowerTypeMapping.archer => const Color(0xFF44BB44),
+        TowerTypeMapping.cannon => const Color(0xFFBB4444),
+        TowerTypeMapping.mage   => const Color(0xFF4488BB),
+        TowerTypeMapping.sniper => const Color(0xFFBBBB44),
+      };
+
       canvas.drawRRect(
-        RRect.fromRectAndRadius(defaultRect, const Radius.circular(6)),
-        Paint()..color = const Color(0xFF112211));
+        RRect.fromRectAndRadius(r, const Radius.circular(8)),
+        Paint()..color = canAfford ? typeColor : const Color(0xFF1A1A1A));
       canvas.drawRRect(
-        RRect.fromRectAndRadius(defaultRect, const Radius.circular(6)),
-        Paint()..color = const Color(0xFF336633)..style = PaintingStyle.stroke..strokeWidth = 1);
-      _drawCenteredText(canvas, '기본 타워 (캐릭터 없음)',
-          defaultRect.center, fontSize: 12);
+        RRect.fromRectAndRadius(r, const Radius.circular(8)),
+        Paint()
+          ..color = canAfford ? borderColor.withAlpha(180) : const Color(0xFF444444)
+          ..style = PaintingStyle.stroke..strokeWidth = 1.2);
 
-      for (int i = 0; i < chars.length && i < 4; i++) {
-        final c = chars[i];
-        final def = CharacterDefinitions.byId(c.characterId);
-        final r = Rect.fromLTWH(popX + 10, popY + 105 + i * 36.0, popW - 20, 30);
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(r, const Radius.circular(6)),
-          Paint()..color = const Color(0xFF112211));
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(r, const Radius.circular(6)),
-          Paint()
-            ..color = Color(def.rank.color).withAlpha(160)
-            ..style = PaintingStyle.stroke..strokeWidth = 1);
-        _drawCenteredText(canvas,
-            '${def.name} [${def.rank.displayName}] Lv${c.cardLevel}',
-            r.center, fontSize: 11);
+      // 캐릭터 썸네일 (첫 프레임, 정수 정렬)
+      final img = characterImages[def.id];
+      if (img != null) {
+        final fW = (img.width.toDouble() / def.frameColumns).floorToDouble();
+        final fH = (img.height.toDouble() / def.frameRows).floorToDouble();
+        final src = Rect.fromLTWH(0, 0, fW, fH);
+        final dst = Rect.fromLTWH(r.left + 4, r.top + 4, 36, 36);
+        canvas.drawImageRect(img, src, dst, _paintDefault);
       }
 
-      // 취소 버튼
-      _drawButton(canvas, '취소',
-          Rect.fromLTWH(popX + popW / 2 - 50, popY + popH - 40, 100, 30),
-          const Color(0xFF331111), const Color(0xFFFF4444));
+      // 캐릭터 이름
+      _drawCenteredText(canvas, def.name,
+          Offset(r.left + 80, r.top + 14),
+          fontSize: 13, color: canAfford
+              ? const Color(0xFFFFFFFF)
+              : const Color(0xFF666666),
+          fontWeight: FontWeight.bold);
+
+      // 타워 타입 태그
+      final typeLabel = switch (def.towerType) {
+        TowerTypeMapping.archer => '궁수',
+        TowerTypeMapping.cannon => '대포',
+        TowerTypeMapping.mage   => '마법',
+        TowerTypeMapping.sniper => '저격',
+      };
+      _drawCenteredText(canvas, typeLabel,
+          Offset(r.left + 80, r.top + 32),
+          fontSize: 10, color: borderColor);
+
+      // 스탯 (데미지, 사거리)
+      _drawCenteredText(canvas, '⚔${stat.damage.toStringAsFixed(0)}  📏${stat.range.toStringAsFixed(0)}',
+          Offset(r.center.dx + 30, r.top + 14),
+          fontSize: 10, color: const Color(0xFF88AA88));
+
+      // 비용
+      _drawCenteredText(canvas, '${cost}g',
+          Offset(r.right - 30, r.center.dy),
+          fontSize: 14,
+          color: canAfford
+              ? const Color(0xFFFFD700)
+              : const Color(0xFF666644),
+          fontWeight: FontWeight.bold);
+
+      // 구매 불가 표시
+      if (!canAfford) {
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(r, const Radius.circular(8)),
+          Paint()..color = const Color(0x44000000));
+      }
     }
+
+    // 취소 버튼
+    _drawButton(canvas, '취소',
+        Rect.fromLTWH(popX + popW / 2 - 50, popY + popH - 40, 100, 30),
+        const Color(0xFF331111), const Color(0xFFFF4444));
   }
 }

@@ -1,6 +1,36 @@
 // 인게임 렌더링: 배경, 경로, 타워 슬롯, 타워, 몬스터, 투사물, VFX
 part of '../castle_defense_game.dart';
 
+// #92: 매 프레임 생성 방지를 위한 캐시된 Paint 객체
+final Paint _paintDefault = Paint();
+final Paint _paintPathFill = Paint()..color = const Color(0xFF5D4E37);
+final Paint _paintPathBorder = Paint()
+  ..color = const Color(0xFF8B7355)
+  ..strokeWidth = 2
+  ..style = PaintingStyle.stroke;
+final Paint _paintPathArrow = Paint()
+  ..color = const Color(0xFFAA9977)
+  ..strokeWidth = 2
+  ..style = PaintingStyle.stroke;
+final Paint _paintSlotFill = Paint()
+  ..color = const Color(0x6644FF88)
+  ..style = PaintingStyle.fill;
+final Paint _paintSlotBorder = Paint()
+  ..color = const Color(0xFF44FF88)
+  ..style = PaintingStyle.stroke
+  ..strokeWidth = 1.5;
+final Paint _paintRangeFill = Paint()
+  ..color = const Color(0x33FFFFFF)
+  ..style = PaintingStyle.fill;
+final Paint _paintRangeBorder = Paint()
+  ..color = const Color(0x88FFFFFF)
+  ..style = PaintingStyle.stroke
+  ..strokeWidth = 1;
+final Paint _paintHpBarBg = Paint()..color = const Color(0xFF444444);
+final Paint _paintHpBarFg = Paint()..color = const Color(0xFF44DD44);
+final Paint _paintFallbackBg = Paint()..color = const Color(0xFF1A2E1A);
+final Paint _paintDarkBg = Paint()..color = const Color(0xFF0D1B0D);
+
 extension GameRendering on CastleDefenseGame {
 
   // ─── 인게임 전체 렌더 (waving / prep) ─────────
@@ -18,18 +48,18 @@ extension GameRendering on CastleDefenseGame {
 
   // ─── 배경 ────────────────────────────────────
   void _renderBackground(Canvas canvas) {
-    final paint = Paint()..color = const Color(0xFF1A2E1A);
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y), paint);
-
-    // 격자 패턴
-    final gridPaint = Paint()
-      ..color = const Color(0xFF243524)
-      ..strokeWidth = 1;
-    for (double x = 0; x < size.x; x += 40) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.y), gridPaint);
-    }
-    for (double y = 0; y < size.y; y += 40) {
-      canvas.drawLine(Offset(0, y), Offset(size.x, y), gridPaint);
+    if (_stageBgImage != null) {
+      // 스테이지 배경 이미지를 화면 전체에 맞춰 그리기
+      final src = Rect.fromLTWH(
+        0, 0,
+        _stageBgImage!.width.toDouble(),
+        _stageBgImage!.height.toDouble(),
+      );
+      final dst = Rect.fromLTWH(0, 0, size.x, size.y);
+      canvas.drawImageRect(_stageBgImage!, src, dst, _paintDefault);
+    } else {
+      // 폴백: 단색 배경
+      canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y), _paintFallbackBg);
     }
   }
 
@@ -37,27 +67,15 @@ extension GameRendering on CastleDefenseGame {
   void _renderPath(Canvas canvas) {
     const double pathW = 60.0;
 
-    // 경로 채우기
-    final fillPaint = Paint()..color = const Color(0xFF5D4E37);
-    // 경로 테두리
-    final borderPaint = Paint()
-      ..color = const Color(0xFF8B7355)
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-
     for (int i = 0; i < kPathWaypointDefs.length - 1; i++) {
       final a = kPathWaypointDefs[i];
       final b = kPathWaypointDefs[i + 1];
       final rect = _segmentRect(a.$1, a.$2, b.$1, b.$2, pathW);
-      canvas.drawRect(rect, fillPaint);
-      canvas.drawRect(rect, borderPaint);
+      canvas.drawRect(rect, _paintPathFill);
+      canvas.drawRect(rect, _paintPathBorder);
     }
 
     // 방향 화살표 (각 구간 중앙)
-    final arrowPaint = Paint()
-      ..color = const Color(0xFFAA9977)
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
     for (int i = 1; i < kPathWaypointDefs.length - 1; i++) {
       final a = kPathWaypointDefs[i];
       final b = kPathWaypointDefs[i + 1];
@@ -68,7 +86,7 @@ extension GameRendering on CastleDefenseGame {
       final len = sqrt(dx * dx + dy * dy).clamp(1.0, double.infinity);
       final nx = dx / len * 10;
       final ny = dy / len * 10;
-      canvas.drawLine(Offset(mx - nx, my - ny), Offset(mx + nx, my + ny), arrowPaint);
+      canvas.drawLine(Offset(mx - nx, my - ny), Offset(mx + nx, my + ny), _paintPathArrow);
     }
 
     // 스폰 표시
@@ -96,31 +114,31 @@ extension GameRendering on CastleDefenseGame {
     for (final slot in towerSlots) {
       if (!slot.isEmpty) continue;
 
-      final isHighlighted = placingTowerType != null;
-      final paint = Paint()
-        ..color = isHighlighted
-            ? const Color(0x8844FF88)
-            : const Color(0x44FFFFFF)
-        ..style = PaintingStyle.fill;
-      final border = Paint()
-        ..color = isHighlighted
-            ? const Color(0xFF44FF88)
-            : const Color(0x88FFFFFF)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5;
+      // 배치 팝업 열린 슬롯에 사정거리 원 표시
+      if (_pendingSlotId == slot.id && _pendingCharPreviewRange > 0) {
+        final rangePaint = Paint()
+          ..color = const Color(0x2244FF88)
+          ..style = PaintingStyle.fill;
+        final rangeBorder = Paint()
+          ..color = const Color(0x8844FF88)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5;
+        canvas.drawCircle(
+            Offset(slot.pos.x, slot.pos.y), _pendingCharPreviewRange, rangePaint);
+        canvas.drawCircle(
+            Offset(slot.pos.x, slot.pos.y), _pendingCharPreviewRange, rangeBorder);
+      }
 
       canvas.drawCircle(
-        Offset(slot.pos.x, slot.pos.y), 22, paint);
+        Offset(slot.pos.x, slot.pos.y), 22, _paintSlotFill);
       canvas.drawCircle(
-        Offset(slot.pos.x, slot.pos.y), 22, border);
+        Offset(slot.pos.x, slot.pos.y), 22, _paintSlotBorder);
 
       // "+" 아이콘
       _drawCenteredText(canvas, '+',
           Offset(slot.pos.x, slot.pos.y),
           fontSize: 18,
-          color: isHighlighted
-              ? const Color(0xFF44FF88)
-              : const Color(0xAAFFFFFF));
+          color: const Color(0xFF44FF88));
     }
   }
 
@@ -132,29 +150,45 @@ extension GameRendering on CastleDefenseGame {
 
       // 사거리 원 (선택된 타워만)
       if (tower.showRange || selectedTower == tower) {
-        final rangePaint = Paint()
-          ..color = const Color(0x33FFFFFF)
-          ..style = PaintingStyle.fill;
-        final rangeBorder = Paint()
-          ..color = const Color(0x88FFFFFF)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1;
         final effectiveRange = tower.range * getRaceRangeBonus();
         canvas.drawCircle(
-            Offset(tower.pos.x, tower.pos.y), effectiveRange, rangePaint);
+            Offset(tower.pos.x, tower.pos.y), effectiveRange, _paintRangeFill);
         canvas.drawCircle(
-            Offset(tower.pos.x, tower.pos.y), effectiveRange, rangeBorder);
+            Offset(tower.pos.x, tower.pos.y), effectiveRange, _paintRangeBorder);
       }
 
-      // 타워 아이콘 (스프라이트 있으면 사용, 없으면 폴백)
+      // 타워 스프라이트 시트 애니메이션
       final img = _getTowerImage(tower);
       if (img != null) {
-        final src = Rect.fromLTWH(0, 0,
-            img.width.toDouble(), img.height.toDouble());
+        final def = tower.charDef;
+        final cols = def?.frameColumns ?? 5;
+        final rows = def?.frameRows ?? 3;
+        final imgW = img.width.toDouble();
+        final imgH = img.height.toDouble();
+        // 프레임 경계를 정수 픽셀로 정렬하여 잘림 방지
+        final frame = tower.animFrame.clamp(0, (cols * rows) - 1);
+        final col = frame % cols;
+        final row = frame ~/ cols;
+        final srcX = (imgW * col / cols).floorToDouble();
+        final srcY = (imgH * row / rows).floorToDouble();
+        final srcR = (imgW * (col + 1) / cols).floorToDouble();
+        final srcB = (imgH * (row + 1) / rows).floorToDouble();
+        final src = Rect.fromLTRB(srcX, srcY, srcR, srcB);
         final dst = Rect.fromCenter(
             center: Offset(tower.pos.x, tower.pos.y),
             width: 44, height: 44);
-        canvas.drawImageRect(img, src, dst, Paint());
+
+        // 왼쪽 방향일 때 flipX (오른쪽 원본을 반전)
+        if (tower.faceLeft) {
+          canvas.save();
+          canvas.translate(tower.pos.x, tower.pos.y);
+          canvas.scale(-1, 1);
+          canvas.translate(-tower.pos.x, -tower.pos.y);
+          canvas.drawImageRect(img, src, dst, _paintDefault);
+          canvas.restore();
+        } else {
+          canvas.drawImageRect(img, src, dst, _paintDefault);
+        }
       } else {
         _drawTowerFallback(canvas, tower);
       }
@@ -173,8 +207,7 @@ extension GameRendering on CastleDefenseGame {
 
   Image? _getTowerImage(_Tower tower) {
     if (tower.characterId != null) {
-      final def = CharacterDefinitions.byId(tower.characterId!);
-      return characterImages[def.classType.name];
+      return characterImages[tower.characterId!];
     }
     return null;
   }
@@ -285,13 +318,13 @@ extension GameRendering on CastleDefenseGame {
       RRect.fromRectAndRadius(
           Rect.fromLTWH(left, top, barW, barH),
           const Radius.circular(2)),
-      Paint()..color = const Color(0xFF444444));
+      _paintHpBarBg);
     if (ratio > 0) {
       canvas.drawRRect(
         RRect.fromRectAndRadius(
             Rect.fromLTWH(left, top, barW * ratio, barH),
             const Radius.circular(2)),
-        Paint()..color = const Color(0xFF44DD44));
+        _paintHpBarFg);
     }
   }
 
@@ -350,23 +383,37 @@ extension GameRendering on CastleDefenseGame {
     }
   }
 
-  // ─── 데미지 숫자 ─────────────────────────────
+  // ─── 데미지 숫자 + 골드 획득 텍스트 ────────────
   void _renderDamageNumbers(Canvas canvas) {
     for (final d in damageNumbers) {
       final t = d.timer / _DamageNumber.duration;
       final y = d.pos.y - t * 25;
       final alpha = (1 - t);
-      _drawCenteredText(
-        canvas,
-        '${d.amount}',
-        Offset(d.pos.x, y),
-        fontSize: d.isCrit ? 14 : 11,
-        color: Color.fromRGBO(
-            d.isCrit ? 255 : 255,
-            d.isCrit ? 220 : 255,
-            d.isCrit ? 50  : 150,
-            alpha),
-      );
+
+      if (d.isGold) {
+        // 골드 획득 부유 텍스트 (+Xg, 금색)
+        _drawCenteredText(
+          canvas,
+          '+${d.amount}g',
+          Offset(d.pos.x + 12, y),
+          fontSize: 13,
+          color: Color.fromRGBO(255, 215, 0, alpha),
+          fontWeight: FontWeight.bold,
+        );
+      } else {
+        // 일반 데미지 숫자
+        _drawCenteredText(
+          canvas,
+          '${d.amount}',
+          Offset(d.pos.x, y),
+          fontSize: d.isCrit ? 14 : 11,
+          color: Color.fromRGBO(
+              d.isCrit ? 255 : 255,
+              d.isCrit ? 220 : 255,
+              d.isCrit ? 50  : 150,
+              alpha),
+        );
+      }
     }
   }
 

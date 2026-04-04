@@ -63,7 +63,7 @@ extension CombatSystem on CastleDefenseGame {
 
   // ─── 성 도달 처리 ────────────────────────────
   void _onMonsterReachedCastle(_Monster m, int idx) {
-    castleHp -= m.castleDamage;
+    castleHp = (castleHp - m.castleDamage).clamp(0, castleMaxHp); // #88: castleHp 범위 제한
     _perfectClearSoFar = false;
     castleFlashTimer = 0.3;
     m.isAlive = false;
@@ -79,7 +79,6 @@ extension CombatSystem on CastleDefenseGame {
     ));
 
     if (castleHp <= 0) {
-      castleHp = 0;
       _onGameOver();
     }
   }
@@ -90,6 +89,22 @@ extension CombatSystem on CastleDefenseGame {
       final tower = slot.tower;
       if (tower == null) continue;
 
+      // 스프라이트 애니메이션 업데이트
+      final def = tower.charDef;
+      final totalFrames = def?.totalFrames ?? 15;
+      if (tower.isAttacking) {
+        tower.animTimer += dt;
+        const double frameInterval = 0.06; // 15프레임 기준 약 0.9초
+        if (tower.animTimer >= frameInterval) {
+          tower.animTimer = 0.0;
+          tower.animFrame++;
+          if (tower.animFrame >= totalFrames) {
+            tower.animFrame = 0;
+            tower.isAttacking = false;
+          }
+        }
+      }
+
       tower.attackTimer += dt;
       final interval = tower.attackInterval;
       if (tower.attackTimer < interval) continue;
@@ -97,7 +112,13 @@ extension CombatSystem on CastleDefenseGame {
       final target = _findTarget(tower);
       if (target == null) continue;
 
+      // 타겟 방향에 따라 좌우 반전 결정
+      tower.faceLeft = target.pos.x < tower.pos.x;
+
       tower.attackTimer = 0.0;
+      tower.isAttacking = true;
+      tower.animFrame = 0;
+      tower.animTimer = 0.0;
       _fireTowerProjectile(tower, target);
     }
   }
@@ -264,6 +285,15 @@ extension CombatSystem on CastleDefenseGame {
     // 골드 지급 (악마족: 마법사 타워 처치 시 +1, 일단 기본 지급)
     playerInGameGold += m.goldReward;
 
+    // 골드 획득 부유 텍스트 표시
+    if (m.goldReward > 0) {
+      damageNumbers.add(_DamageNumber(
+        pos: m.pos.clone()..y -= 10,
+        amount: m.goldReward,
+        isGold: true,
+      ));
+    }
+
     vfxEffects.add(_VfxEffect(
       pos: m.pos.clone(),
       type: VfxType.death,
@@ -344,34 +374,26 @@ extension CombatSystem on CastleDefenseGame {
 
     if (playerInGameGold < cost) return false;
 
-    // 카드 등급 보정 계산
-    double gradeBonus = 0.0;
-    if (characterId != null) {
-      final owned = ownedCharacters.firstWhere(
-        (c) => c.characterId == characterId,
-        orElse: () => OwnedCharacter(instanceId: '', characterId: ''),
-      );
-      if (owned.characterId.isNotEmpty) {
-        final def = CharacterDefinitions.byId(owned.characterId);
-        final gradeBase = switch (def.rank) {
-          RankType.s => 0.15,
-          RankType.a => 0.10,
-          RankType.b => 0.05,
-          _          => 0.00,
-        };
-        gradeBonus = gradeBase + owned.cardLevelBonus;
-      }
-    }
-
     playerInGameGold -= cost;
     slot.tower = _Tower(
       type: type,
       slotId: slotId,
       pos: slot.pos.clone(),
       characterId: characterId,
-      cardGradeBonus: gradeBonus,
     );
     return true;
+  }
+
+  // 캐릭터 ID로부터 타워 타입 결정
+  static TowerType towerTypeFromCharacter(String characterId) {
+    final def = CharacterDefinitions.tryById(characterId);
+    if (def == null) return TowerType.archer;
+    return switch (def.towerType) {
+      TowerTypeMapping.archer => TowerType.archer,
+      TowerTypeMapping.cannon => TowerType.cannon,
+      TowerTypeMapping.mage   => TowerType.mage,
+      TowerTypeMapping.sniper => TowerType.sniper,
+    };
   }
 
   // ─── 타워 업그레이드 ─────────────────────────

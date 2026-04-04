@@ -7,9 +7,9 @@ import 'package:flame/extensions.dart';
 import 'package:flame/camera.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/painting.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models/character_model.dart';
-import 'models/character_enums.dart';
 import 'data/character_definitions.dart';
 import 'systems/gacha_system.dart';
 
@@ -27,6 +27,7 @@ part 'ui/render_ui.dart';
 part 'systems/stage_system.dart';
 part 'systems/combat_system.dart';
 part 'systems/progression_system.dart';
+part 'systems/save_system.dart';
 
 class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
@@ -55,7 +56,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   int playerGem = 300;
   int playerStarShards = 0;
   RaceType playerRace = RaceType.human;
-  bool raceSelected = false;
+  bool raceSelected = true; // 종족 선택 스킵 (기본: 인간)
   int unlockedStageMax = 1;
   final Set<int> _clearedStages = {};
 
@@ -78,7 +79,12 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   double speedMultiplier = 1.0;
   int _pendingSlotId = -1;
   TowerType? _pendingTowerType;
+  double _pendingCharPreviewRange = 0.0; // 배치 시 사정거리 미리보기
   double characterListScrollOffset = 0.0;
+
+  // ─── 웨이브 시작 카운트다운 (3, 2, 1, GO!) ────
+  double _waveCountdownTimer = 0.0;
+  bool _waveCountdownActive = false;
 
   // ─── 웨이브 클리어 인터벌 ─────────────────────
   double _waveClearTimer = 0.0;
@@ -88,8 +94,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   double _loadingTimer = 0.0;
   static const double _loadingDuration = 0.5;
 
-  // ─── 가챠 ────────────────────────────────────
-  final List<OwnedCharacter> ownedCharacters = [];
+  // ─── 가챠 (추후 재구현) ───────────────────────
   final GachaSystem gachaSystem = GachaSystem();
   List<CharacterDefinition>? gachaResults;
   int gachaResultIndex = 0;
@@ -100,8 +105,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   bool goblinImageLoaded = false;
   Image? bossMonsterImage;
   Image? minibossMonsterImage;
-  final Map<String, Image> characterImages = {};
+  final Map<String, Image> characterImages = {};  // characterId → 스프라이트 시트
   final Map<String, Image> stageMonsterImages = {};
+  Image? _stageBgImage; // 스테이지별 배경 이미지
 
   // ─── 랜덤 ────────────────────────────────────
   final Random _random = Random();
@@ -114,6 +120,9 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     await super.onLoad();
     camera.viewport = FixedResolutionViewport(resolution: Vector2(390, 844));
 
+    // 저장된 게임 데이터 불러오기
+    await _loadSaveData();
+
     // 타워 슬롯 초기화
     towerSlots = kTowerSlotDefs.map((d) =>
       _TowerSlot(id: d.$1, pos: Vector2(d.$2, d.$3))).toList();
@@ -124,6 +133,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       _loadCastleSprite(),
       _loadBossSprites(),
       _loadCharacterSprites(),
+      _loadStageBgImage(stageLevel),
     ]);
   }
 
@@ -143,14 +153,25 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   }
 
   Future<void> _loadCharacterSprites() async {
-    const names = [
-      'warrior','guardian','berserker','archer','gunslinger','rogue',
-      'pyromancer','cryomancer','warlock','priest','druid','paladin',
-      'alchemist','engineer','necromancer','summoner','main_character',
-    ];
-    for (final n in names) {
-      try { characterImages[n] = await images.load('characters/$n.png'); } catch (_) {}
+    // 새 애셋 기반: CharacterDefinitions에서 스프라이트 시트 로드
+    for (final def in CharacterDefinitions.all) {
+      try {
+        characterImages[def.id] = await images.load(def.spriteSheet);
+      } catch (_) {}
     }
+  }
+
+  // 스테이지 배경 이미지 매핑
+  static const Map<int, String> _stageBgMap = {
+    1: 'maps/stage_1_forest.png',
+    2: 'maps/stage_2_snow.png',
+    3: 'maps/stage_3_hell.png',
+    4: 'maps/stage_4_beach.png',
+  };
+
+  Future<void> _loadStageBgImage(int level) async {
+    final path = _stageBgMap[level] ?? _stageBgMap[1]!;
+    try { _stageBgImage = await images.load(path); } catch (_) {}
   }
 
   // ─────────────────────────────────────────────
@@ -184,6 +205,16 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   }
 
   void _updateWaving(double dt) {
+    // 카운트다운 진행 중이면 스폰/전투 일시 정지
+    if (_waveCountdownActive) {
+      _waveCountdownTimer -= dt;
+      if (_waveCountdownTimer <= -0.5) {
+        // GO! 표시 후 0.5초 뒤 카운트다운 종료
+        _waveCountdownActive = false;
+      }
+      return;
+    }
+
     final eff = dt * speedMultiplier;
     if (castleFlashTimer > 0) castleFlashTimer -= dt;
 
@@ -215,14 +246,16 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       case GameState.prep:
         _renderGame(canvas);
         _renderHUD(canvas);
-        _renderTowerBar(canvas);
+        _renderBottomBar(canvas);
         if (selectedTower != null) _renderTowerPopup(canvas);
         if (_pendingSlotId >= 0) _renderTowerPlacementPopup(canvas);
       case GameState.waving:
         _renderGame(canvas);
         _renderHUD(canvas);
-        _renderTowerBar(canvas);
+        _renderBottomBar(canvas);
         if (selectedTower != null) _renderTowerPopup(canvas);
+        if (_pendingSlotId >= 0) _renderTowerPlacementPopup(canvas);
+        if (_waveCountdownActive) _renderWaveCountdown(canvas);
       case GameState.waveCleared:
         _renderGame(canvas);
         _renderHUD(canvas);
@@ -255,8 +288,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   }
 
   void _renderHomeBase(Canvas canvas) {
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y),
-        Paint()..color = const Color(0xFF0D1B0D));
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y), _paintDarkBg);
   }
 
   void _renderSettingsPlaceholder(Canvas canvas) {
@@ -266,8 +298,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
   }
 
   void _renderLoading(Canvas canvas) {
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y),
-        Paint()..color = const Color(0xFF0D1B0D));
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y), _paintDarkBg);
     final progress = (_loadingTimer / _loadingDuration).clamp(0.0, 1.0);
     const barW = 200.0;
     final barX = (size.x - barW) / 2;
@@ -395,18 +426,8 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       return;
     }
 
-    // 타워 바 버튼
-    const types = TowerType.values;
-    final btnW = (size.x - 10) / types.length;
-    final barY = size.y - 100.0;
-    for (int i = 0; i < types.length; i++) {
-      final btnRect = Rect.fromLTWH(5 + i * btnW, barY + 5, btnW - 5, 90);
-      if (btnRect.contains(offset)) {
-        placingTowerType = placingTowerType == types[i] ? null : types[i];
-        selectedTower = null;
-        return;
-      }
-    }
+    // 하단 바 영역 (골드/시작 버튼 영역) 탭 무시
+    if (pos.y > size.y - 60) return;
 
     // 이미 배치된 타워 탭
     for (final slot in towerSlots) {
@@ -415,28 +436,26 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       final dy = pos.y - slot.tower!.pos.y;
       if (sqrt(dx * dx + dy * dy) < 24) {
         selectedTower = selectedTower == slot.tower ? null : slot.tower;
-        placingTowerType = null;
         return;
       }
     }
 
-    // 빈 슬롯 탭 (배치 모드일 때)
-    if (placingTowerType != null) {
-      for (final slot in towerSlots) {
-        if (!slot.isEmpty) continue;
-        final dx = pos.x - slot.pos.x;
-        final dy = pos.y - slot.pos.y;
-        if (sqrt(dx * dx + dy * dy) < 22) {
-          _pendingSlotId = slot.id;
-          _pendingTowerType = placingTowerType;
-          return;
-        }
+    // 빈 슬롯 탭 → 바로 캐릭터 선택 팝업 (카테고리 없이)
+    for (final slot in towerSlots) {
+      if (!slot.isEmpty) continue;
+      final dx = pos.x - slot.pos.x;
+      final dy = pos.y - slot.pos.y;
+      if (sqrt(dx * dx + dy * dy) < 26) {
+        _pendingSlotId = slot.id;
+        _pendingTowerType = null; // 타워 타입은 캐릭터 선택 시 자동 결정
+        _pendingCharPreviewRange = 0.0;
+        selectedTower = null;
+        return;
       }
     }
 
     // 그 외 탭 → 선택 해제
     selectedTower = null;
-    placingTowerType = null;
   }
 
   // ─── 웨이빙 탭 ───────────────────────────────
@@ -455,6 +474,15 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       if (_handleTowerPopupTap(pos)) return;
     }
 
+    // 배치 팝업 버튼
+    if (_pendingSlotId >= 0) {
+      if (_handlePlacementPopupTap(pos)) return;
+      return;
+    }
+
+    // 하단 바 영역 탭 무시
+    if (pos.y > size.y - 60) return;
+
     // 배치된 타워 탭
     for (final slot in towerSlots) {
       if (slot.tower == null) continue;
@@ -462,6 +490,20 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
       final dy = pos.y - slot.tower!.pos.y;
       if (sqrt(dx * dx + dy * dy) < 24) {
         selectedTower = selectedTower == slot.tower ? null : slot.tower;
+        return;
+      }
+    }
+
+    // 빈 슬롯 탭 → 웨이브 진행 중에도 캐릭터 배치 가능
+    for (final slot in towerSlots) {
+      if (!slot.isEmpty) continue;
+      final dx = pos.x - slot.pos.x;
+      final dy = pos.y - slot.pos.y;
+      if (sqrt(dx * dx + dy * dy) < 26) {
+        _pendingSlotId = slot.id;
+        _pendingTowerType = null;
+        _pendingCharPreviewRange = 0.0;
+        selectedTower = null;
         return;
       }
     }
@@ -516,40 +558,36 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
 
   // ─── 배치 팝업 탭 ────────────────────────────
   bool _handlePlacementPopupTap(Vector2 pos) {
-    if (_pendingSlotId < 0 || _pendingTowerType == null) return false;
+    if (_pendingSlotId < 0) return false;
     final offset = Offset(pos.x, pos.y);
 
-    const double popW = 320.0, popH = 260.0;
+    final chars = CharacterDefinitions.all;
+    // 스크롤 가능한 팝업 (최대 높이 제한)
+    final contentH = 60.0 + chars.length * 50.0 + 50.0;
+    final popH = contentH.clamp(0.0, size.y - 80);
+    const double popW = 340.0;
     final popX = (size.x - popW) / 2;
-    final popY = (size.y - popH) / 2 - 50;
+    final popY = ((size.y - popH) / 2).clamp(30.0, size.y - popH - 10);
 
     // 취소 버튼
     final cancelRect = Rect.fromLTWH(popX + popW / 2 - 50, popY + popH - 40, 100, 30);
     if (cancelRect.contains(offset)) {
       _pendingSlotId = -1;
       _pendingTowerType = null;
-      return true;
-    }
-
-    // 기본 타워 (캐릭터 없음) 선택
-    final defaultRect = Rect.fromLTWH(popX + 10, popY + 65, popW - 20, 32);
-    if (defaultRect.contains(offset)) {
-      placeTower(_pendingSlotId, _pendingTowerType!, null);
-      _pendingSlotId = -1;
-      _pendingTowerType = null;
-      placingTowerType = null;
+      _pendingCharPreviewRange = 0.0;
       return true;
     }
 
     // 캐릭터 선택
-    final chars = getCharactersForTowerType(_pendingTowerType!);
-    for (int i = 0; i < chars.length && i < 4; i++) {
-      final r = Rect.fromLTWH(popX + 10, popY + 105 + i * 36.0, popW - 20, 30);
+    for (int i = 0; i < chars.length; i++) {
+      final r = Rect.fromLTWH(popX + 10, popY + 54 + i * 50.0, popW - 20, 44);
       if (r.contains(offset)) {
-        placeTower(_pendingSlotId, _pendingTowerType!, chars[i].characterId);
+        final charDef = chars[i];
+        final towerType = CombatSystem.towerTypeFromCharacter(charDef.id);
+        placeTower(_pendingSlotId, towerType, charDef.id);
         _pendingSlotId = -1;
         _pendingTowerType = null;
-        placingTowerType = null;
+        _pendingCharPreviewRange = 0.0;
         return true;
       }
     }
@@ -559,6 +597,7 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     if (!popRect.contains(offset)) {
       _pendingSlotId = -1;
       _pendingTowerType = null;
+      _pendingCharPreviewRange = 0.0;
     }
     return true;
   }
@@ -579,60 +618,14 @@ class CastleDefenseGame extends FlameGame with TapCallbacks, DragCallbacks {
     }
   }
 
-  // ─── 가챠 탭 ─────────────────────────────────
+  // ─── 가챠 탭 (추후 재구현) ────────────────────
   void _handleGachaTap(Offset offset) {
-    if (gachaResults != null) {
-      gachaResultIndex++;
-      if (gachaResultIndex >= gachaResults!.length) {
-        for (final def in gachaResults!) _processGachaResult(def);
-        gachaResults = null;
-        gachaResultIndex = 0;
-      }
-      return;
-    }
-    if (_gachaSingleButtonRect().contains(offset)) {
-      final cost = gachaSystem.getSingleSummonCost();
-      if (playerGem >= cost) {
-        playerGem -= cost;
-        gachaResults = [gachaSystem.summonOne()];
-        gachaResultIndex = 0;
-      }
-      return;
-    }
-    if (_gachaTenButtonRect().contains(offset)) {
-      final cost = gachaSystem.getTenSummonCost();
-      if (playerGem >= cost) {
-        playerGem -= cost;
-        gachaResults = gachaSystem.summonTen();
-        gachaResultIndex = 0;
-      }
-      return;
-    }
+    // 가챠 시스템 비활성 상태
   }
 
-  // ─── 컬렉션 탭 ───────────────────────────────
+  // ─── 컬렉션 탭 (추후 재구현) ────────────────────
   void _handleCollectionTap(Offset offset) {
-    const double cardW = 340.0, cardH = 70.0, gap = 8.0;
-    final startX = (size.x - cardW) / 2;
-    const double startY = 175.0;
-
-    final seen = <String>{};
-    final unique = <OwnedCharacter>[];
-    for (final c in ownedCharacters) {
-      if (seen.add(c.characterId)) unique.add(c);
-    }
-
-    for (int i = 0; i < unique.length; i++) {
-      final c = unique[i];
-      final y = startY + i * (cardH + gap) - characterListScrollOffset;
-      if (c.cardLevel >= 5) continue;
-
-      final upgRect = Rect.fromLTWH(startX + cardW - 100, y + 15, 90, 40);
-      if (upgRect.contains(offset)) {
-        upgradeCard(c.characterId);
-        return;
-      }
-    }
+    // 현재 캐릭터 도감 표시만 (업그레이드 시스템 제거)
   }
 
   // ─── 드래그 (컬렉션/가챠 스크롤) ──────────────

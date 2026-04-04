@@ -18,6 +18,9 @@ extension StageSystem on CastleDefenseGame {
     vfxEffects.clear();
     damageNumbers.clear();
 
+    // 스테이지 배경 로드
+    _loadStageBgImage(level);
+
     // 타워는 유지 (준비 단계에서 배치한 것 보존)
     // 인게임 골드 리셋
     playerInGameGold = 150 + (level - 1) * 50;
@@ -55,9 +58,12 @@ extension StageSystem on CastleDefenseGame {
     return result;
   }
 
-  // ─── 웨이브 시작 (prep → waving) ───────────────
+  // ─── 웨이브 시작 (prep → 카운트다운 → waving) ───
   void _startWave() {
     if (gameState != GameState.prep) return;
+    // 카운트다운 시작 (3, 2, 1, GO!)
+    _waveCountdownActive = true;
+    _waveCountdownTimer = 3.0;
     _loadWave(currentWave + 1);
     gameState = GameState.waving;
   }
@@ -117,6 +123,9 @@ extension StageSystem on CastleDefenseGame {
     }
 
     gameState = GameState.stageClear;
+
+    // 스테이지 클리어 데이터 저장
+    _saveGameData();
   }
 
   // ─── 게임오버 ─────────────────────────────────
@@ -172,5 +181,8 @@ extension StageSystem on CastleDefenseGame {
     playerRace = race;
     raceSelected = true;
     gameState = GameState.home;
+
+    // 종족 선택 데이터 저장
+    _saveGameData();
   }
 }

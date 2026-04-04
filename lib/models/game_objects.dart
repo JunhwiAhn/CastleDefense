@@ -75,11 +75,14 @@ class _Tower {
   final int slotId;
   Vector2 pos;
   int level;                  // 인게임 업그레이드 레벨 (1~3)
-  String? characterId;        // 배치된 캐릭터 카드 ID (null = 기본)
-  double cardGradeBonus;      // 카드 등급+레벨 보정 (0.0 ~ 0.35)
+  String? characterId;        // 배치된 캐릭터 ID (CharacterDefinition.id)
   double attackTimer;         // 공격 쿨다운 누적
   TargetPriority targetPriority;
   bool showRange;             // 사거리 원 표시 여부
+  double animTimer;           // 스프라이트 애니메이션 타이머
+  int animFrame;              // 현재 프레임
+  bool isAttacking;           // 공격 중 플래그
+  bool faceLeft;              // 왼쪽 바라보기 (flipX용)
 
   _Tower({
     required this.type,
@@ -87,17 +90,20 @@ class _Tower {
     required this.pos,
     this.level = 1,
     this.characterId,
-    this.cardGradeBonus = 0.0,
     this.attackTimer = 0.0,
     this.targetPriority = TargetPriority.first,
     this.showRange = false,
+    this.animTimer = 0.0,
+    this.animFrame = 0,
+    this.isAttacking = false,
+    this.faceLeft = false,
   });
 
   _TowerStats get _base => kTowerBaseStat[type]!;
   double get levelMult => kTowerLevelMult[level];
 
-  // 실제 스탯 (레벨 × 카드 보정 × 종족 패시브는 외부에서 곱함)
-  double get damage      => _base.damage * levelMult * (1 + cardGradeBonus);
+  // 실제 스탯
+  double get damage      => _base.damage * levelMult;
   double get attackSpeed => _base.attackSpeed * levelMult;
   double get range       => _base.range;
   double get splash      => _base.splash;
@@ -116,14 +122,21 @@ class _Tower {
 
   // 타워 표시 이름
   String get displayName {
-    final typeName = switch (type) {
-      TowerType.archer => '궁수',
-      TowerType.cannon => '대포',
-      TowerType.mage   => '마법사',
-      TowerType.sniper => '저격',
+    if (characterId != null) {
+      final def = CharacterDefinitions.tryById(characterId!);
+      if (def != null) return def.name;
+    }
+    return switch (type) {
+      TowerType.archer => '궁수 타워',
+      TowerType.cannon => '대포 타워',
+      TowerType.mage   => '마법사 타워',
+      TowerType.sniper => '저격 타워',
     };
-    return characterId != null ? '$typeName의 진지' : '$typeName 타워';
   }
+
+  // 스프라이트 시트 정보
+  CharacterDefinition? get charDef =>
+      characterId != null ? CharacterDefinitions.tryById(characterId!) : null;
 }
 
 // ─────────────────────────────────────────
@@ -241,14 +254,15 @@ class _DamageNumber {
   double timer;
   final int amount;
   final bool isCrit;
+  final bool isGold; // 골드 획득 텍스트 여부
 
   _DamageNumber({
     required this.pos,
     required this.amount,
     this.isCrit = false,
+    this.isGold = false,
   }) : timer = 0.0;
 
   static const double duration = 1.0;
   bool get isExpired => timer >= duration;
 }
-
